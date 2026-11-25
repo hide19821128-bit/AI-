@@ -999,3 +999,398 @@ document.querySelector('h1 small').textContent='V4.1';
 document.title='AI RACE V4.1';
 
 </script>
+<script>
+
+const histCard=document.createElement('div');
+
+histCard.className='card';
+
+histCard.innerHTML=`
+
+<h2>過去データ統計</h2>
+
+<p>全国24場の競走結果を集計します。</p>
+
+<label>開始日</label>
+
+<input type="date" id="histFrom">
+
+<label>終了日</label>
+
+<input type="date" id="histTo">
+
+<label>集計対象</label>
+
+<select id="histVenue">
+
+<option value="0">全国24場</option>
+
+${venues.boat.split(' ').map((v,i)=>
+
+'<option value="'+(i+1)+'">'+v+'</option>').join('')}
+
+</select>
+
+<button id="histRun" onclick="runHistory()">
+
+過去データ集計開始
+
+</button>
+
+<p id="histStatus"></p>
+
+<div id="histOutput"></div>
+
+`;
+
+$('result').before(histCard);
+
+$('histFrom').value=$('date').value.slice(0,8)+'01';
+
+const yesterday=new Date(Date.now()-86400000);
+
+$('histTo').value=yesterday.toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'});
+
+async function runHistory(){
+
+ const from=new Date($('histFrom').value+'T00:00:00Z');
+
+ const to=new Date($('histTo').value+'T00:00:00Z');
+
+ const target=Number($('histVenue').value);
+
+ const days=[];
+
+ if(!Number.isFinite(+from)||!Number.isFinite(+to)||from>to){
+
+ alert('日付を確認してください');return;
+
+ }
+
+ for(let d=new Date(from);d<=to;d.setUTCDate(d.getUTCDate()+1)){
+
+ days.push(d.toISOString().slice(0,10).replace(/-/g,''));
+
+ if(days.length>31){
+
+ alert('一度に集計できるのは31日間です');return;
+
+ }
+
+ }
+
+ $('histRun').disabled=true;
+
+ $('histOutput').innerHTML='';
+
+ const boats=Array.from({length:6},()=>[0,0,0]);
+
+ const grades={A1:[0,0,0,0],A2:[0,0,0,0],B1:[0,0,0,0],B2:[0,0,0,0]};
+
+ const players=new Map();
+
+ let total=0,high50=0,high100=0,payCount=0,amountSum=0;
+
+ let success=0,excluded=0;
+
+ const failed=[];
+
+ const base='https://boatraceopenapi.github.io/';
+
+ async function get(url){
+
+ try{
+
+ const res=await fetch(url);
+
+ if(!res.ok)return null;
+
+ return await res.json();
+
+ }catch(e){return null}
+
+ }
+
+ try{
+
+ for(let i=0;i<days.length;i++){
+
+ const day=days[i];
+
+ const path=day.slice(0,4)+'/'+day+'.json';
+
+ $('histStatus').textContent=
+
+ '集計中：'+(i+1)+'/'+days.length+'日';
+
+ const [rd,pd]=await Promise.all([
+
+ get(base+'results/v3/'+path),
+
+ get(base+'api/v1/'+path)
+
+ ]);
+
+ if(!Array.isArray(rd?.results)){
+
+ failed.push(day);continue;
+
+ }
+
+ success++;
+
+ for(const r of rd.results){
+
+ if(target&&Number(r.stadium_number)!==target)continue;
+
+ const racers=(r.boats||[]).filter(x=>
+
+ Number(x.racer_place_number)>=1&&
+
+ Number(x.racer_place_number)<=6&&
+
+ Number(x.racer_boat_number)>=1&&
+
+ Number(x.racer_boat_number)<=6);
+
+ const top=racers.filter(x=>Number(x.racer_place_number)<=3);
+
+ if(top.length!==3||new Set(top.map(x=>Number(x.racer_place_number))).size!==3){
+
+ excluded++;continue;
+
+ }
+
+ total++;
+
+ const payouts=r.payouts?.trifecta;
+
+ if(Array.isArray(payouts)&&payouts.length===1&&
+
+ payouts[0].amount!=null&&Number(payouts[0].amount)>0){
+
+ const amount=Number(payouts[0].amount);
+
+ payCount++;
+
+ amountSum+=amount;
+
+ if(amount>=5000)high50++;
+
+ if(amount>=10000)high100++;
+
+ }
+
+ const program=pd?.programs?.stadiums?.[r.stadium_number]?.races?.[r.number];
+
+ for(const x of racers){
+
+ const n=Number(x.racer_boat_number);
+
+ const place=Number(x.racer_place_number);
+
+ if(place<=3)boats[n-1][place-1]++;
+
+ const entry=program?.racers?.[n];
+
+ const grade=entry?.rank_number_source;
+
+ if(grades[grade]){
+
+ grades[grade][0]++;
+
+ if(place<=3)grades[grade][place]++;
+
+ }
+
+ const key=String(x.racer_number||'');
+
+ if(!key)continue;
+
+ if(!players.has(key)){
+
+ players.set(key,{
+
+ name:x.racer_name||entry?.name||key,
+
+ count:0,
+
+ places:[0,0,0],
+
+ courses:Array.from({length:6},()=>[0,0,0,0])
+
+ });
+
+ }
+
+ const p=players.get(key);
+
+ p.count++;
+
+ if(place<=3)p.places[place-1]++;
+
+ const course=Number(x.racer_course_number);
+
+ if(course>=1&&course<=6){
+
+ p.courses[course-1][0]++;
+
+ if(place<=3)p.courses[course-1][place]++;
+
+ }
+
+ }
+
+ }
+
+ }
+
+ const pct=(n,d)=>d?(n/d*100).toFixed(1)+'%':'―';
+
+ $('histStatus').textContent=
+
+ '集計完了：'+total.toLocaleString()+
+
+ 'レース／取得'+success+'日';
+
+ $('histOutput').innerHTML=`
+
+ <p>集計対象：${total.toLocaleString()}レース</p>
+
+ <p>除外：${excluded}レース</p>
+
+ <p>取得失敗日：${failed.length?failed.join('、'):'なし'}</p>
+
+ <h3>艇番別着順率</h3>
+
+ <table>
+
+ <tr><th>艇</th><th>1着</th><th>2着</th><th>3着</th><th>3着内</th></tr>
+
+ ${boats.map((b,i)=>`
+
+ <tr>
+
+ <td><span class="num" style="background:${colors[i]};color:${i===0||i===4?'#111':'white'}">${i+1}</span></td>
+
+ <td>${pct(b[0],total)}</td>
+
+ <td>${pct(b[1],total)}</td>
+
+ <td>${pct(b[2],total)}</td>
+
+ <td>${pct(b.reduce((a,v)=>a+v,0),total)}</td>
+
+ </tr>`).join('')}
+
+ </table>
+
+ <h3>級別着順率</h3>
+
+ <table>
+
+ <tr><th>級</th><th>出走</th><th>1着</th><th>2着</th><th>3着</th></tr>
+
+ ${Object.entries(grades).map(([g,b])=>`
+
+ <tr><td>${g}</td><td>${b[0]}</td>
+
+ <td>${pct(b[1],b[0])}</td>
+
+ <td>${pct(b[2],b[0])}</td>
+
+ <td>${pct(b[3],b[0])}</td></tr>`).join('')}
+
+ </table>
+
+ <h3>3連単・配当統計</h3>
+
+ <div class="stats">
+
+ <div class="stat">50倍以上<strong>${pct(high50,payCount)}</strong></div>
+
+ <div class="stat">万舟率<strong>${pct(high100,payCount)}</strong></div>
+
+ <div class="stat">平均払戻金<strong>${payCount?Math.round(amountSum/payCount).toLocaleString():'―'}円</strong></div>
+
+ <div class="stat">配当集計数<strong>${payCount}</strong></div>
+
+ </div>
+
+ <h3>選手別成績</h3>
+
+ <input id="playerSearch" placeholder="選手名・登録番号を検索">
+
+ <div id="playerList"></div>
+
+ <p class="warn">返還・同着・不成立の完全な処理は未実装です。級別・選手別成績は有効着順を取得できた出走のみ集計しています。</p>
+
+ `;
+
+ function showPlayers(){
+
+ const q=$('playerSearch').value.trim();
+
+ const list=Array.from(players.entries()).filter(([k,p])=>
+
+ q?(p.name.includes(q)||k.includes(q)):p.count>=10
+
+ ).sort((a,b)=>b[1].places[0]/b[1].count-a[1].places[0]/a[1].count).slice(0,50);
+
+ $('playerList').innerHTML=list.map(([k,p])=>`
+
+ <details>
+
+ <summary>${esc(p.name)}／1着率 ${pct(p.places[0],p.count)}</summary>
+
+ <p>登録番号：${esc(k)}</p>
+
+ <p>有効出走：${p.count}</p>
+
+ <p>1着：${pct(p.places[0],p.count)}　
+
+ 2着：${pct(p.places[1],p.count)}　
+
+ 3着：${pct(p.places[2],p.count)}</p>
+
+ <table>
+
+ <tr><th>コース</th><th>出走</th><th>1着</th><th>2着</th><th>3着</th></tr>
+
+ ${p.courses.map((c,i)=>`
+
+ <tr><td>${i+1}</td><td>${c[0]}</td>
+
+ <td>${pct(c[1],c[0])}</td>
+
+ <td>${pct(c[2],c[0])}</td>
+
+ <td>${pct(c[3],c[0])}</td></tr>`).join('')}
+
+ </table>
+
+ </details>`).join('')||'<p>該当選手なし</p>';
+
+ }
+
+ $('playerSearch').oninput=showPlayers;
+
+ showPlayers();
+
+ }catch(e){
+
+ $('histStatus').textContent='集計エラー：'+e.message;
+
+ }finally{
+
+ $('histRun').disabled=false;
+
+ }
+
+}
+
+document.querySelector('h1 small').textContent='V5';
+
+document.title='AI RACE V5';
+
+</script>
