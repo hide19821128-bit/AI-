@@ -2217,3 +2217,548 @@ document.querySelector('h1 small').textContent='V8';
 document.title='AI RACE V8';
 
 </script>
+<script>
+
+(()=>{
+
+const panel=document.createElement('div');
+
+panel.className='card';
+
+panel.innerHTML=`
+
+<h2>総合統計分析 V12</h2>
+
+<p>保存済みの実測データを利用します。</p>
+
+<button id="v12run">統計モデル一括検証</button>
+
+<p id="v12status"></p>
+
+<div id="v12out"></div>
+
+`;
+
+v8.after(panel);
+
+const pct=(n,d)=>d?(100*n/d).toFixed(1)+'%':'―';
+
+function readData(){
+
+ const d=JSON.parse(localStorage.getItem(v6key)||'null');
+
+ if(!d?.records?.length)
+
+ throw new Error('V6で過去データを保存してください');
+
+ return d.records.filter(r=>
+
+ r.b.length===6&&
+
+ new Set(r.b.map(b=>b[0])).size===6&&
+
+ new Set(r.b.map(b=>b[1])).size===6&&
+
+ r.b.every(b=>b[0]>=1&&b[0]<=6&&b[1]>=1&&b[1]<=6));
+
+}
+
+function windGroup(w){
+
+ if(w==null||!Number.isFinite(Number(w)))return '不明';
+
+ if(w<=1)return '0〜1m';
+
+ if(w<=3)return '2〜3m';
+
+ if(w<=5)return '4〜5m';
+
+ return '6m以上';
+
+}
+
+function exhibitionRank(r,b){
+
+ if(!r.b.every(x=>Number(x[4])>0))return 0;
+
+ return 1+r.b.filter(x=>Number(x[4])<Number(b[4])).length;
+
+}
+
+function keys(r,b){
+
+ return [
+
+ '艇:'+b[0],
+
+ '級:'+b[0]+':'+b[3],
+
+ '場:'+r.s+':'+b[0],
+
+ '選手:'+b[2]+':'+b[0],
+
+ '展示:'+b[0]+':'+exhibitionRank(r,b),
+
+ '進入:'+b[5],
+
+ '風:'+b[0]+':'+windGroup(r.w)
+
+ ];
+
+}
+
+function train(rows){
+
+ const m=new Map();
+
+ for(const r of rows){
+
+ for(const b of r.b){
+
+ for(const k of keys(r,b)){
+
+ if(!m.has(k))m.set(k,[0,0]);
+
+ const a=m.get(k);
+
+ a[0]++;
+
+ if(b[1]===1)a[1]++;
+
+ }
+
+ }
+
+ }
+
+ return m;
+
+}
+
+function rate(m,k,prior,w){
+
+ const a=m.get(k)||[0,0];
+
+ return (a[1]+prior*w)/(a[0]+w);
+
+}
+
+function model(r,m,mode){
+
+ const s=r.b.map(b=>{
+
+ const k=keys(r,b);
+
+ let p=rate(m,k[0],1/6,20);
+
+ if(mode>=1)
+
+ p=rate(m,k[1],p,30);
+
+ if(mode>=2&&b[2])
+
+ p=.8*p+.2*rate(m,k[3],p,40);
+
+ if(mode>=3&&exhibitionRank(r,b))
+
+ p=.75*p+.25*rate(m,k[4],p,40);
+
+ if(mode>=4){
+
+ p=.85*p+.15*rate(m,k[2],p,50);
+
+ if(b[5]>=1&&b[5]<=6)
+
+ p=.85*p+.15*rate(m,k[5],p,40);
+
+ if(r.w!=null&&exhibitionRank(r,b))
+
+ p=.9*p+.1*rate(m,k[6],p,50);
+
+ }
+
+ return Math.max(.001,p);
+
+ });
+
+ const sum=s.reduce((a,b)=>a+b,0);
+
+ return s.map(x=>x/sum);
+
+}
+
+function ranks(p){
+
+ const a=p.map(x=>[x,0,0]);
+
+ for(let i=0;i<p.length;i++){
+
+ for(let j=0;j<p.length;j++){
+
+ if(i===j)continue;
+
+ const q=p[i]*p[j]/(1-p[i]);
+
+ a[j][1]+=q;
+
+ for(let k=0;k<p.length;k++){
+
+ if(k===i||k===j)continue;
+
+ a[k][2]+=q*p[k]/(1-p[i]-p[j]);
+
+ }
+
+ }
+
+ }
+
+ return a;
+
+}
+
+function evaluate(rows,m,mode){
+
+ let mse=0,loss=0,hit=0,rankLoss=0;
+
+ for(const r of rows){
+
+ const p=model(r,m,mode);
+
+ const a=ranks(p);
+
+ const best=p.indexOf(Math.max(...p));
+
+ if(r.b[best][1]===1)hit++;
+
+ r.b.forEach((b,i)=>{
+
+ const y=b[1]===1?1:0;
+
+ mse+=(p[i]-y)**2;
+
+ if(y)loss-=Math.log(p[i]);
+
+ if(b[1]<=3)
+
+ rankLoss-=Math.log(Math.max(a[i][b[1]-1],1e-9));
+
+ });
+
+ }
+
+ return {
+
+ mse:mse/(rows.length*6),
+
+ loss:loss/rows.length,
+
+ hit:hit/rows.length,
+
+ rankLoss:rankLoss/(rows.length*3)
+
+ };
+
+}
+
+$('v12run').onclick=function(){
+
+ try{
+
+ const rows=readData();
+
+ const days=[...new Set(rows.map(r=>r.d))].sort();
+
+ if(days.length<10)
+
+ throw new Error('10日間以上のデータが必要です');
+
+ const c1=days[Math.floor(days.length*.6)];
+
+ const c2=days[Math.floor(days.length*.8)];
+
+ const training=rows.filter(r=>r.d<c1);
+
+ const tuning=rows.filter(r=>r.d>=c1&&r.d<c2);
+
+ const testing=rows.filter(r=>r.d>=c2);
+
+ if(!training.length||!tuning.length||!testing.length)
+
+ throw new Error('検証データ不足');
+
+ const m=train(training);
+
+ const names=[
+
+ '艇番のみ',
+
+ '艇番＋級別',
+
+ '選手個人成績を追加',
+
+ '展示情報を追加',
+
+ '競艇場・進入・風速を追加'
+
+ ];
+
+ const results=names.map((name,i)=>({
+
+ name,mode:i,...evaluate(tuning,m,i)
+
+ }));
+
+ const best=results.reduce((a,b)=>
+
+ a.loss<=b.loss?a:b);
+
+ const finalModel=train([...training,...tuning]);
+
+ const baseline=evaluate(testing,finalModel,0);
+
+ const result=evaluate(testing,finalModel,best.mode);
+
+ let html=`
+
+ <h3>データ分割</h3>
+
+ <table>
+
+ <tr><td>学習</td><td>${training.length}R</td></tr>
+
+ <tr><td>モデル選択</td><td>${tuning.length}R</td></tr>
+
+ <tr><td>最終検証</td><td>${testing.length}R</td></tr>
+
+ </table>
+
+ <h3>モデル選択期間の比較</h3>
+
+ <div class="scroll">
+
+ <table>
+
+ <tr><th>モデル</th><th>誤差</th><th>対数損失</th></tr>
+
+ ${results.map(x=>`
+
+ <tr>
+
+ <td>${esc(x.name)}</td>
+
+ <td>${x.mse.toFixed(4)}</td>
+
+ <td>${x.loss.toFixed(4)}</td>
+
+ </tr>`).join('')}
+
+ </table></div>
+
+ <h3>最終検証結果</h3>
+
+ <p>選択モデル：${esc(best.name)}</p>
+
+ <table>
+
+ <tr><th>指標</th><th>艇番のみ</th><th>選択モデル</th></tr>
+
+ <tr><td>平均二乗誤差</td>
+
+ <td>${baseline.mse.toFixed(4)}</td>
+
+ <td>${result.mse.toFixed(4)}</td></tr>
+
+ <tr><td>対数損失</td>
+
+ <td>${baseline.loss.toFixed(4)}</td>
+
+ <td>${result.loss.toFixed(4)}</td></tr>
+
+ <tr><td>1着予測一致率</td>
+
+ <td>${(baseline.hit*100).toFixed(1)}%</td>
+
+ <td>${(result.hit*100).toFixed(1)}%</td></tr>
+
+ <tr><td>着順別対数損失</td>
+
+ <td>${baseline.rankLoss.toFixed(4)}</td>
+
+ <td>${result.rankLoss.toFixed(4)}</td></tr>
+
+ </table>
+
+ `;
+
+ const winds=['0〜1m','2〜3m','4〜5m','6m以上'];
+
+ html+=`
+
+ <h3>風速別・実測配当傾向</h3>
+
+ <table>
+
+ <tr><th>風速</th><th>件数</th><th>50倍以上</th><th>万舟率</th></tr>
+
+ ${winds.map(w=>{
+
+ const a=rows.filter(r=>
+
+ r.p>0&&
+
+ r.b.every(b=>Number(b[4])>0)&&
+
+ windGroup(r.w)===w);
+
+ return '<tr><td>'+w+'</td><td>'+a.length+
+
+ '</td><td>'+pct(a.filter(r=>r.p>=5000).length,a.length)+
+
+ '</td><td>'+pct(a.filter(r=>r.p>=10000).length,a.length)+
+
+ '</td></tr>';
+
+ }).join('')}
+
+ </table>
+
+ <p class="warn">過去の発生率であり、個別の舟券の的中率ではありません。</p>
+
+ `;
+
+ html+=`
+
+ <h3>過去配当分布</h3>
+
+ <table>
+
+ <tr><th>配当区分</th><th>件数</th><th>割合</th></tr>
+
+ ${[
+
+ ['10倍未満',0,1000],
+
+ ['10〜49.9倍',1000,5000],
+
+ ['50〜99.9倍',5000,10000],
+
+ ['100倍以上',10000,Infinity]
+
+ ].map(([name,min,max])=>{
+
+ const a=rows.filter(r=>r.p>0);
+
+ const n=a.filter(r=>r.p>=min&&r.p<max).length;
+
+ return '<tr><td>'+name+'</td><td>'+n+
+
+ '</td><td>'+pct(n,a.length)+'</td></tr>';
+
+ }).join('')}
+
+ </table>
+
+ <p class="warn">返還・欠場・同着を含むレースなどは対象外です。</p>
+
+ <p>最新オッズ：未接続</p>
+
+ <p>競馬データ：未接続</p>
+
+ `;
+
+ $('v12out').innerHTML=html;
+
+ $('v12status').textContent='一括検証完了';
+
+ }catch(e){
+
+ $('v12status').textContent='検証失敗：'+e.message;
+
+ }
+
+};
+
+const oldAnalyse=analyse;
+
+analyse=async function(){
+
+ await oldAnalyse();
+
+ const box=document.getElementById('extraV4');
+
+ if(!box)return;
+
+ const tables=box.querySelectorAll('table');
+
+ if(tables.length>=2){
+
+ const rows=[...tables[1].querySelectorAll('tr')].slice(1);
+
+ const valid=rows.some(r=>Number(r.cells[3]?.textContent)>0);
+
+ if(!valid){
+
+ const p=box.querySelector('p');
+
+ if(p){
+
+ p.textContent='展示情報公開待ち・またはデータ欠損';
+
+ p.className='warn';
+
+ }
+
+ tables[0].querySelectorAll('tr').forEach(r=>{
+
+ if(r.cells[1])r.cells[1].textContent='未取得';
+
+ });
+
+ rows.forEach(r=>{
+
+ for(let i=1;i<r.cells.length;i++)
+
+ r.cells[i].textContent='未取得';
+
+ });
+
+ $('factors').querySelectorAll('tr').forEach(r=>{
+
+ if(['展示タイム','風速・波高'].includes(r.cells[0]?.textContent)){
+
+ r.cells[1].textContent='未取得';
+
+ r.cells[1].className='warn';
+
+ }
+
+ });
+
+ }
+
+ }
+
+};
+
+const style=document.createElement('style');
+
+style.textContent=`
+
+input[type=date]{min-width:0;max-width:100%}
+
+.scroll{overflow-x:auto}
+
+table{font-variant-numeric:tabular-nums}
+
+`;
+
+document.head.appendChild(style);
+
+document.querySelector('h1 small').textContent='V12';
+
+document.title='AI RACE V12';
+
+})();
+
+</script>
