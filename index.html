@@ -1793,3 +1793,198 @@ document.querySelector('h1 small').textContent='V6';
 document.title='AI RACE V6';
 
 </script>
+<script>
+
+const v7=document.createElement('div');
+
+v7.className='card';
+
+v7.innerHTML=`
+
+<h2>統計精度検証・V7</h2>
+
+<p>保存済みの過去データを学習期間と検証期間に分けて比較します。</p>
+
+<button id="v7run">統計精度を検証する</button>
+
+<p id="v7status"></p>
+
+<div id="v7out"></div>
+
+`;
+
+v6.after(v7);
+
+$('v7run').onclick=function(){
+
+ try{
+
+ const data=JSON.parse(localStorage.getItem(v6key)||'null');
+
+ if(!data?.records?.length){
+
+ alert('V6でデータを保存してください');
+
+ return;
+
+ }
+
+ const days=[...new Set(data.records.map(r=>r.d))].sort();
+
+ if(days.length<5){
+
+ alert('5日間以上のデータが必要です');
+
+ return;
+
+ }
+
+ const split=Math.floor(days.length*0.8);
+
+ const cutoff=days[split];
+
+ const train=data.records.filter(r=>r.d<cutoff);
+
+ const test=data.records.filter(r=>r.d>=cutoff);
+
+ const pct=(n,d)=>d?(100*n/d).toFixed(1)+'%':'―';
+
+ function stats(rows,n,g){
+
+ const a=rows.flatMap(r=>r.b.filter(b=>
+
+ b[0]===n&&b[3]===g&&b[1]>=1&&b[1]<=6));
+
+ return {
+
+ count:a.length,
+
+ wins:a.filter(b=>b[1]===1).length,
+
+ top3:a.filter(b=>b[1]<=3).length
+
+ };
+
+ }
+
+ let html=`
+
+ <h3>検証条件</h3>
+
+ <table>
+
+ <tr><td>学習開始日</td><td>${days[0]}</td></tr>
+
+ <tr><td>学習終了日</td><td>${days[split-1]}</td></tr>
+
+ <tr><td>学習レース数</td><td>${train.length}</td></tr>
+
+ <tr><td>検証開始日</td><td>${cutoff}</td></tr>
+
+ <tr><td>検証終了日</td><td>${days.at(-1)}</td></tr>
+
+ <tr><td>検証レース数</td><td>${test.length}</td></tr>
+
+ </table>
+
+ <h3>艇番・級別の再現性</h3>
+
+ <table>
+
+ <tr>
+
+ <th>艇</th><th>級</th>
+
+ <th>学習1着率</th><th>検証1着率</th>
+
+ <th>検証数</th>
+
+ </tr>`;
+
+ for(let n=1;n<=6;n++){
+
+ for(const g of ['A1','A2','B1','B2']){
+
+ const a=stats(train,n,g);
+
+ const b=stats(test,n,g);
+
+ html+=`<tr>
+
+ <td>${n}</td>
+
+ <td>${g}</td>
+
+ <td>${pct(a.wins,a.count)}</td>
+
+ <td>${pct(b.wins,b.count)}</td>
+
+ <td>${b.count}</td>
+
+ </tr>`;
+
+ }
+
+ }
+
+ html+='</table>';
+
+ html+=`<h3>配当発生率の比較</h3>
+
+ <table>
+
+ <tr><th>項目</th><th>学習期間</th><th>検証期間</th></tr>`;
+
+ const ap=train.filter(r=>r.p>0);
+
+ const bp=test.filter(r=>r.p>0);
+
+ for(const [label,limit] of [
+
+ ['50倍以上',5000],
+
+ ['万舟券',10000]
+
+ ]){
+
+ html+=`<tr>
+
+ <td>${label}</td>
+
+ <td>${pct(ap.filter(r=>r.p>=limit).length,ap.length)}</td>
+
+ <td>${pct(bp.filter(r=>r.p>=limit).length,bp.length)}</td>
+
+ </tr>`;
+
+ }
+
+ html+='</table>';
+
+ html+=`<p class="warn">
+
+ 過去の統計の再現性を確認する機能です。
+
+ 個別レースの予測精度や将来の利益を保証するものではありません。
+
+ 出走数が少ない条件には注意してください。
+
+ </p>`;
+
+ $('v7out').innerHTML=html;
+
+ $('v7status').textContent='統計検証完了';
+
+ }catch(e){
+
+ $('v7status').textContent='検証失敗：'+e.message;
+
+ }
+
+};
+
+document.querySelector('h1 small').textContent='V7';
+
+document.title='AI RACE V7';
+
+</script>
