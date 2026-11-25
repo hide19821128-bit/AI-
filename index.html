@@ -2762,3 +2762,190 @@ document.title='AI RACE V12';
 })();
 
 </script>
+<script>
+
+(()=>{
+
+const panel=document.createElement('div');
+
+panel.className='card';
+
+panel.innerHTML=`
+
+<h2>データ管理・V13</h2>
+
+<p>保存済みの競艇データを確認・管理します。</p>
+
+<button id="v13check">保存データを確認</button>
+
+<button id="v13export">データをバックアップ</button>
+
+<p id="v13status"></p>
+
+<div id="v13out"></div>
+
+`;
+
+v8.after(panel);
+
+$('v13check').onclick=function(){
+
+try{
+
+const data=JSON.parse(localStorage.getItem(v6key)||'null');
+
+if(!data?.records?.length){
+
+$('v13status').textContent='保存データがありません';
+
+return;
+
+}
+
+const rows=data.records;
+
+const days=[...new Set(rows.map(r=>r.d))].sort();
+
+const valid=rows.filter(r=>
+
+r.b.length===6&&
+
+new Set(r.b.map(b=>b[0])).size===6&&
+
+new Set(r.b.map(b=>b[1])).size===6&&
+
+r.b.every(b=>b[1]>=1&&b[1]<=6));
+
+const exhibition=valid.filter(r=>
+
+r.b.every(b=>Number(b[4])>0));
+
+$('v13out').innerHTML=`
+
+<h3>保存データの状態</h3>
+
+<table>
+
+<tr><td>開始日</td><td>${esc(days[0])}</td></tr>
+
+<tr><td>終了日</td><td>${esc(days.at(-1))}</td></tr>
+
+<tr><td>保存レース数</td><td>${rows.length}</td></tr>
+
+<tr><td>全着順有効</td><td>${valid.length}</td></tr>
+
+<tr><td>展示情報あり</td><td>${exhibition.length}</td></tr>
+
+<tr><td>取得失敗日</td><td>${esc((data.failed||[]).join('、')||'なし')}</td></tr>
+
+</table>
+
+<h3>過去の着順分布</h3>
+
+<table>
+
+<tr><th>艇番</th><th>1着</th><th>2着</th><th>3着</th></tr>
+
+${[1,2,3,4,5,6].map(n=>{
+
+const counts=[1,2,3].map(p=>
+
+valid.filter(r=>r.b.some(b=>
+
+b[0]===n&&b[1]===p)).length);
+
+return '<tr><td>'+n+'</td>'+
+
+counts.map(c=>'<td>'+
+
+(valid.length?(100*c/valid.length).toFixed(1)+'%':'―')+
+
+'</td>').join('')+'</tr>';
+
+}).join('')}
+
+</table>
+
+<p class="warn">過去の実測統計であり、個別レースの予測確率ではありません。</p>
+
+`;
+
+$('v13status').textContent='データ確認完了';
+
+}catch(e){
+
+$('v13status').textContent='確認失敗：'+e.message;
+
+}
+
+};
+
+$('v13export').onclick=function(){
+
+const raw=localStorage.getItem(v6key);
+
+if(!raw){
+
+alert('保存データがありません');
+
+return;
+
+}
+
+const blob=new Blob([raw],{type:'application/json'});
+
+const url=URL.createObjectURL(blob);
+
+const a=document.createElement('a');
+
+a.href=url;
+
+a.download='AI-RACE-backup.json';
+
+a.click();
+
+setTimeout(()=>URL.revokeObjectURL(url),3000);
+
+};
+
+for(const section of [histCard,v6,v7,v8]){
+
+const wrap=document.createElement('details');
+
+const summary=document.createElement('summary');
+
+summary.textContent=section.querySelector('h2')?.textContent||'詳細統計';
+
+section.before(wrap);
+
+wrap.appendChild(summary);
+
+wrap.appendChild(section);
+
+}
+
+const style=document.createElement('style');
+
+style.textContent=`
+
+body{padding-bottom:40px}
+
+input[type=date]{width:100%;max-width:100%;min-width:0}
+
+.card{overflow-wrap:anywhere}
+
+details .card{margin:10px 0;padding:10px}
+
+button{min-height:46px}
+
+`;
+
+document.head.appendChild(style);
+
+document.querySelector('h1 small').textContent='V13';
+
+document.title='AI RACE V13';
+
+})();
+
+</script>
