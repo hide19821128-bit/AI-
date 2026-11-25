@@ -2949,3 +2949,682 @@ document.title='AI RACE V13';
 })();
 
 </script>
+
+
+<script>
+
+(()=>{
+
+const panel=document.createElement('div');
+
+panel.className='card';
+
+panel.innerHTML=`
+
+<h2>総合レース分析</h2>
+
+<p>過去の実測データによる統計モデル</p>
+
+<button id="finalAnalyse">選択中のレースを統計分析</button>
+
+<p id="finalStatus"></p>
+
+<div id="finalOutput"></div>
+
+<details>
+
+<summary>過去データ・仮想収支検証</summary>
+
+<p>指定したフォーメーションを過去の結果と比較します。</p>
+
+<label>1着候補</label>
+
+<input id="btFirst" placeholder="例：1 2 3">
+
+<label>2着候補</label>
+
+<input id="btSecond" placeholder="例：1 2 3 4">
+
+<label>3着候補</label>
+
+<input id="btThird" placeholder="例：1 2 3 4 5 6">
+
+<button id="btRun">過去の成績を検証</button>
+
+<div id="btOutput"></div>
+
+</details>
+
+<details>
+
+<summary>データのバックアップ・復元</summary>
+
+<button id="finalBackup">バックアップを保存</button>
+
+<p>保存したJSONファイルから復元</p>
+
+<input type="file" id="finalRestore" accept=".json">
+
+<p id="restoreStatus"></p>
+
+</details>
+
+`;
+
+$('result').before(panel);
+
+const pct=x=>(x*100).toFixed(1)+'%';
+
+function dataset(){
+
+const d=JSON.parse(
+
+localStorage.getItem(v6key)||'null'
+
+);
+
+if(!Array.isArray(d?.records)||!d.records.length)
+
+throw new Error('保存データがありません');
+
+return d.records.filter(r=>
+
+Array.isArray(r.b)&&
+
+r.b.length===6&&
+
+new Set(r.b.map(b=>b[0])).size===6&&
+
+new Set(r.b.map(b=>b[1])).size===6&&
+
+r.b.every(b=>b[0]>=1&&b[0]<=6&&b[1]>=1&&b[1]<=6)
+
+);
+
+}
+
+function makeModel(rows){
+
+const m=new Map();
+
+for(const r of rows){
+
+for(const b of r.b){
+
+const keys=[
+
+'boat:'+b[0],
+
+'grade:'+b[0]+':'+b[3],
+
+'player:'+b[2]+':'+b[0]
+
+];
+
+for(const k of keys){
+
+if(!m.has(k))m.set(k,[0,0]);
+
+const a=m.get(k);
+
+a[0]++;
+
+if(b[1]===1)a[1]++;
+
+}
+
+}
+
+}
+
+return m;
+
+}
+
+function smoothed(m,k,prior,w){
+
+const a=m.get(k)||[0,0];
+
+return (a[1]+prior*w)/(a[0]+w);
+
+}
+
+function probability(boats,m){
+
+const scores=boats.map(b=>{
+
+let p=smoothed(
+
+m,'boat:'+b[0],1/6,20
+
+);
+
+p=smoothed(
+
+m,'grade:'+b[0]+':'+b[3],p,30
+
+);
+
+p=.8*p+.2*smoothed(
+
+m,'player:'+b[2]+':'+b[0],p,40
+
+);
+
+return Math.max(.001,p);
+
+});
+
+const sum=scores.reduce((a,b)=>a+b,0);
+
+return scores.map(x=>x/sum);
+
+}
+
+function rankProbability(p){
+
+const out=p.map(x=>[x,0,0]);
+
+for(let i=0;i<p.length;i++){
+
+for(let j=0;j<p.length;j++){
+
+if(i===j)continue;
+
+const q=p[i]*p[j]/(1-p[i]);
+
+out[j][1]+=q;
+
+for(let k=0;k<p.length;k++){
+
+if(k===i||k===j)continue;
+
+out[k][2]+=q*p[k]/
+
+(1-p[i]-p[j]);
+
+}
+
+}
+
+}
+
+return out;
+
+}
+
+$('finalAnalyse').onclick=async function(){
+
+const button=$('finalAnalyse');
+
+button.disabled=true;
+
+$('finalOutput').innerHTML='';
+
+try{
+
+if(sport!=='boat')
+
+throw new Error('競馬の自動データは未接続です');
+
+const date=$('date').value;
+
+if(!date)throw new Error('開催日を指定してください');
+
+const day=date.replace(/-/g,'');
+
+const stadium=venues.boat.split(' ')
+
+.indexOf($('venue').value)+1;
+
+const race=parseInt($('race').value);
+
+const rows=dataset().filter(r=>r.d<day);
+
+if(rows.length<100)
+
+throw new Error('対象日より前の学習データが不足しています');
+
+$('finalStatus').textContent='出走表を取得中...';
+
+const url=
+
+'https://boatraceopenapi.github.io/api/v1/'
+
++day.slice(0,4)+'/'+day+'.json';
+
+const res=await fetch(url,{cache:'no-store'});
+
+if(!res.ok)throw new Error('データ取得失敗');
+
+const data=await res.json();
+
+const program=data.programs?.stadiums
+
+?.[stadium]?.races?.[race];
+
+if(!program?.racers)
+
+throw new Error('出走表がありません');
+
+const racers=Object.values(program.racers)
+
+.sort((a,b)=>a.entry_number-b.entry_number);
+
+if(racers.length!==6||
+
+new Set(racers.map(x=>x.entry_number)).size!==6)
+
+throw new Error('出走データ不足');
+
+if(racers.some(x=>!x.number||
+
+!['A1','A2','B1','B2'].includes(x.rank_number_source)))
+
+throw new Error('選手情報が不足しています');
+
+const boats=racers.map(x=>[
+
+x.entry_number,
+
+0,
+
+x.number,
+
+x.rank_number_source
+
+]);
+
+const model=makeModel(rows);
+
+const p=probability(boats,model);
+
+const ranks=rankProbability(p);
+
+let html=`
+
+<h3>${esc(venues.boat.split(' ')[stadium-1])}${race}R</h3>
+
+<p>開催日：${esc(date)}</p>
+
+<p>学習対象：${rows.length.toLocaleString()}レース</p>
+
+<p>締切：${esc(program.closed_at)}</p>
+
+<h3>着順の統計推定値</h3>
+
+<div class="scroll">
+
+<table>
+
+<tr>
+
+<th>艇</th><th>選手</th>
+
+<th>1着</th><th>2着</th><th>3着</th>
+
+</tr>
+
+`;
+
+racers.forEach((x,i)=>{
+
+html+=`
+
+<tr>
+
+<td><span class="num"
+
+style="background:${colors[i]};
+
+color:${i===0||i===4?'#111':'white'}">
+
+${esc(x.entry_number)}
+
+</span></td>
+
+<td>${esc(x.name)}<br>
+
+<small>${esc(x.rank_number_source)}</small></td>
+
+<td>${pct(ranks[i][0])}</td>
+
+<td>${pct(ranks[i][1])}</td>
+
+<td>${pct(ranks[i][2])}</td>
+
+</tr>`;
+
+});
+
+html+=`</table></div>`;
+
+const samples=boats.map(b=>
+
+(model.get('player:'+b[2]+':'+b[0])||[0])[0]
+
+);
+
+html+=`
+
+<h3>データ充足状況</h3>
+
+<table>
+
+<tr><th>艇</th><th>同じ艇番での過去出走</th></tr>
+
+${samples.map((x,i)=>
+
+'<tr><td>'+(i+1)+'</td><td>'+x+'走</td></tr>'
+
+).join('')}
+
+</table>
+
+<p class="warn">
+
+${samples.some(x=>x<10)?
+
+'選手個人の学習データが少ない条件があります。':
+
+'選手別データを取得済みです。'}
+
+</p>
+
+<p>モデル：艇番・級別・選手個人成績</p>
+
+<p>展示・気象・モーター情報は別画面に表示されますが、
+
+この確率モデルには反映していません。</p>
+
+<p class="warn">
+
+統計モデルによる推定値です。
+
+実際の的中確率としての保証はありません。
+
+最新オッズは未接続です。
+
+</p>
+
+`;
+
+$('finalOutput').innerHTML=html;
+
+$('finalStatus').textContent='統計分析完了';
+
+}catch(e){
+
+$('finalStatus').textContent=e.message;
+
+}finally{
+
+button.disabled=false;
+
+}
+
+};
+
+function numbers(id){
+
+const value=$(id).value.normalize('NFKC').trim();
+
+if(!value||!/^[1-6\s,、]+$/.test(value))
+
+throw new Error('1〜6の艇番を入力してください');
+
+return [...new Set(
+
+value.match(/[1-6]/g).map(Number)
+
+)];
+
+}
+
+$('btRun').onclick=function(){
+
+try{
+
+const first=numbers('btFirst');
+
+const second=numbers('btSecond');
+
+const third=numbers('btThird');
+
+const combinations=new Set();
+
+for(const a of first)
+
+for(const b of second)
+
+for(const c of third){
+
+if(new Set([a,b,c]).size===3)
+
+combinations.add(a+'-'+b+'-'+c);
+
+}
+
+if(!combinations.size)
+
+throw new Error('有効な組み合わせがありません');
+
+const rows=dataset().filter(r=>
+
+Number.isFinite(r.p)&&r.p>0);
+
+if(!rows.length)
+
+throw new Error('払戻データがありません');
+
+let hit=0,returns=0;
+
+for(const r of rows){
+
+const result=r.b.slice()
+
+.sort((a,b)=>a[1]-b[1])
+
+.slice(0,3)
+
+.map(b=>b[0]).join('-');
+
+if(combinations.has(result)){
+
+hit++;
+
+returns+=r.p;
+
+}
+
+}
+
+const cost=rows.length*combinations.size*100;
+
+$('btOutput').innerHTML=`
+
+<h3>過去の仮想検証結果</h3>
+
+<table>
+
+<tr><td>対象レース</td><td>${rows.length}R</td></tr>
+
+<tr><td>組み合わせ数</td><td>${combinations.size}点</td></tr>
+
+<tr><td>一致レース数</td><td>${hit}R</td></tr>
+
+<tr><td>一致率</td><td>${pct(hit/rows.length)}</td></tr>
+
+<tr><td>仮想購入総額</td><td>${cost.toLocaleString()}円</td></tr>
+
+<tr><td>仮想払戻総額</td><td>${returns.toLocaleString()}円</td></tr>
+
+<tr><td>仮想回収率</td><td>${pct(returns/cost)}</td></tr>
+
+<tr><td>仮想収支</td><td>${(returns-cost).toLocaleString()}円</td></tr>
+
+</table>
+
+<p class="warn">1点100円とした過去データの検証です。
+
+返還や欠場を含む一部レースは除外しています。
+
+将来の回収率とは異なります。</p>
+
+`;
+
+}catch(e){
+
+$('btOutput').textContent=e.message;
+
+}
+
+};
+
+$('finalBackup').onclick=function(){
+
+const raw=localStorage.getItem(v6key);
+
+if(!raw){
+
+alert('保存データがありません');
+
+return;
+
+}
+
+const url=URL.createObjectURL(
+
+new Blob([raw],{type:'application/json'})
+
+);
+
+const a=document.createElement('a');
+
+a.href=url;
+
+a.download='AI-RACE-backup.json';
+
+a.click();
+
+setTimeout(()=>URL.revokeObjectURL(url),3000);
+
+};
+
+$('finalRestore').onchange=async function(){
+
+try{
+
+const f=this.files[0];
+
+if(!f)return;
+
+const raw=await f.text();
+
+const d=JSON.parse(raw);
+
+if(!Array.isArray(d.records)||
+
+!d.records.length||
+
+!Array.isArray(d.failed)||
+
+!d.records.every(r=>
+
+/^\d{8}$/.test(r.d)&&
+
+Number.isInteger(r.s)&&r.s>=1&&r.s<=24&&
+
+Array.isArray(r.b)&&
+
+r.b.every(b=>Array.isArray(b)&&b.length>=6)
+
+))
+
+throw new Error('バックアップ形式が違います');
+
+if(!confirm('保存済みデータを置き換えますか？'))
+
+return;
+
+localStorage.setItem(v6key,raw);
+
+$('restoreStatus').textContent=
+
+'復元成功：'+d.records.length+'レース';
+
+}catch(e){
+
+$('restoreStatus').textContent=
+
+'復元失敗：'+e.message;
+
+}
+
+};
+
+const prevAnalyse=analyse;
+
+analyse=async function(){
+
+$('finalOutput').innerHTML='';
+
+$('finalStatus').textContent='';
+
+await prevAnalyse();
+
+};
+
+for(const id of ['v12run','v13check']){
+
+const el=document.getElementById(id);
+
+const section=el?.closest('.card');
+
+if(!section)continue;
+
+const wrap=document.createElement('details');
+
+const summary=document.createElement('summary');
+
+summary.textContent=
+
+section.querySelector('h2')?.textContent||
+
+'詳細分析';
+
+section.before(wrap);
+
+wrap.appendChild(summary);
+
+wrap.appendChild(section);
+
+}
+
+const style=document.createElement('style');
+
+style.textContent=`
+
+html{color-scheme:dark}
+
+body{max-width:760px;margin:auto}
+
+input[type=date]{width:100%;max-width:100%;min-width:0}
+
+table{font-variant-numeric:tabular-nums}
+
+.scroll{overflow-x:auto}
+
+button{min-height:46px}
+
+`;
+
+document.head.appendChild(style);
+
+document.querySelector('h1 small').textContent='V14';
+
+document.title='AI RACE V14';
+
+})();
+
+</script>
