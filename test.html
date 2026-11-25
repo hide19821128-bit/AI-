@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+
+<html lang="ja">
+
+<meta charset="UTF-8">
+
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>AI RACE 通信テスト</title>
+
+<body style="background:#101923;color:white;padding:20px">
+
+<h2>AI RACE 通信テスト</h2>
+
+<button onclick="test()">データ取得開始</button>
+
+<pre id="result" style="white-space:pre-wrap"></pre>
+
+<script>
+
+async function test(){
+
+ const r=document.getElementById('result');
+
+ r.textContent='通信中...';
+
+ try{
+
+  const res=await fetch('https://boatraceopenapi.github.io/api/v1/2026/20261125.json');
+
+  if(!res.ok)throw new Error(res.status);
+
+  const data=await res.json();
+
+  r.textContent='取得成功！\n\n'+JSON.stringify(data.programs.stadiums,null,2).slice(0,4000);
+
+ }catch(e){
+
+  r.textContent='取得失敗：'+e.message;
+
+ }
+
+}
+
+</script>
+
+</body>
+
+</html>
