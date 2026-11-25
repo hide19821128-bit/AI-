@@ -4455,3 +4455,952 @@ document.title='AI RACE V15';
 })();
 
 </script>
+
+
+<script>
+
+(()=>{
+
+const $16=id=>document.getElementById(id);
+
+const panel=document.createElement('div');
+
+panel.className='card';
+
+panel.innerHTML=`
+
+<h2>AI総合予測 V16</h2>
+
+<button id="v16repair">
+
+画像認識データを再抽出
+
+</button>
+
+<p id="v16ocrstatus"></p>
+
+<h3>統計モデル・オッズ総合分析</h3>
+
+<button id="v16run">
+
+本命・高配当・期待回収率を分析
+
+</button>
+
+<p id="v16status"></p>
+
+<div id="v16output"></div>
+
+<h3>フォーメーション検証</h3>
+
+<label>1着</label>
+
+<input id="v16first" placeholder="1">
+
+<label>2着</label>
+
+<input id="v16second" placeholder="2 3 4">
+
+<label>3着</label>
+
+<input id="v16third" placeholder="2 3 4 5">
+
+<label>1点の仮想金額</label>
+
+<input id="v16money" type="number"
+
+value="100" min="100" step="100">
+
+<button id="v16check">
+
+点数・期待回収率・実測回収率を計算
+
+</button>
+
+<div id="v16form"></div>
+
+<p>
+
+推定確率は統計モデルによる参考値です。
+
+画像のオッズは自動更新されません。
+
+</p>
+
+`;
+
+const old=$16('v15run');
+
+if(!old)return;
+
+old.closest('.card').after(panel);
+
+let model=null;
+
+const names=[
+
+'桐生','戸田','江戸川','平和島',
+
+'多摩川','浜名湖','蒲郡','常滑',
+
+'津','三国','びわこ','住之江',
+
+'尼崎','鳴門','丸亀','児島',
+
+'宮島','徳山','下関','若松',
+
+'芦屋','福岡','唐津','大村'
+
+];
+
+function day(){
+
+return $16('date').value.replace(/-/g,'');
+
+}
+
+function key(){
+
+return [
+
+sport,
+
+day(),
+
+$16('venue').value,
+
+$16('race').value
+
+].join('|');
+
+}
+
+function oddsParse(text){
+
+const map=new Map();
+
+const pattern=
+
+/(?:^|[^0-9])([1-6])\s*[-－−ー]\s*([1-6])\s*[-－−ー]\s*([1-6])\s+([0-9,]+(?:\.[0-9]+)?)(?![0-9.])/g;
+
+for(const line of text.normalize('NFKC').split(/\r?\n/)){
+
+for(const m of line.matchAll(pattern)){
+
+const a=Number(m[1]);
+
+const b=Number(m[2]);
+
+const c=Number(m[3]);
+
+if(new Set([a,b,c]).size!==3)
+
+continue;
+
+const value=Number(m[4].replace(/,/g,''));
+
+if(!Number.isFinite(value)||value<1)
+
+continue;
+
+map.set(
+
+`${a}-${b}-${c}`,
+
+value
+
+);
+
+}
+
+}
+
+return map;
+
+}
+
+function invalidate(){
+
+model=null;
+
+$16('v16output').innerHTML='';
+
+$16('v16form').innerHTML='';
+
+}
+
+function repair(){
+
+const raw=$16('v15raw').value;
+
+if(!raw.trim()){
+
+$16('v16ocrstatus').textContent=
+
+'先に画像認識を実行してください';
+
+return;
+
+}
+
+const map=oddsParse(raw);
+
+if(!map.size){
+
+$16('v16ocrstatus').textContent=
+
+'抽出できませんでした。手動入力してください';
+
+return;
+
+}
+
+const merged=oddsParse($16('v15odds').value);
+
+for(const [k,v] of map)
+
+merged.set(k,v);
+
+$16('v15odds').value=
+
+[...merged]
+
+.map(([k,v])=>`${k} ${v.toFixed(1)}`)
+
+.join('\n');
+
+$16('v15confirmed').checked=false;
+
+invalidate();
+
+$16('v16ocrstatus').textContent=
+
+`${map.size}件抽出しました。小数点を含め、必ず元画像と照合してください。`;
+
+}
+
+$16('v16repair').onclick=repair;
+
+const observer=new MutationObserver(()=>{
+
+const status=$16('v15status').textContent;
+
+if(status.startsWith('画像認識完了'))
+
+repair();
+
+});
+
+observer.observe($16('v15status'),{
+
+childList:true,
+
+characterData:true,
+
+subtree:true
+
+});
+
+for(const id of ['date','venue','race']){
+
+$16(id).addEventListener('change',invalidate);
+
+}
+
+$16('v15odds').addEventListener(
+
+'input',invalidate
+
+);
+
+$16('v15images').addEventListener(
+
+'change',invalidate
+
+);
+
+$16('v15confirmed').addEventListener(
+
+'change',invalidate
+
+);
+
+function history(){
+
+const data=JSON.parse(
+
+localStorage.getItem('aiRaceHistoryV6')
+
+||'null'
+
+);
+
+return (data?.records||[]).filter(r=>
+
+r.d<day()&&
+
+Array.isArray(r.b)&&
+
+r.b.length===6&&
+
+r.b.every(b=>
+
+Number(b[0])>=1&&
+
+Number(b[0])<=6&&
+
+Number(b[1])>=1&&
+
+Number(b[1])<=6
+
+)&&
+
+new Set(r.b.map(b=>Number(b[0]))).size===6&&
+
+new Set(r.b.map(b=>Number(b[1]))).size===6
+
+);
+
+}
+
+function grade(g){
+
+return String(g??'')
+
+.trim().toUpperCase();
+
+}
+
+function pct(n){
+
+return Number.isFinite(n)?
+
+(n*100).toFixed(2)+'%':'―';
+
+}
+
+function actual(r){
+
+return r.b.slice()
+
+.sort((a,b)=>a[1]-b[1])
+
+.slice(0,3)
+
+.map(b=>Number(b[0]))
+
+.join('-');
+
+}
+
+async function predict(){
+
+const rows=history();
+
+if(rows.length<100)
+
+throw new Error('過去データが100レース未満です');
+
+const currentKey=key();
+
+const counts=new Map();
+
+function add(k,win){
+
+const v=counts.get(k)||[0,0];
+
+v[0]++;
+
+v[1]+=win;
+
+counts.set(k,v);
+
+}
+
+for(const r of rows){
+
+for(const b of r.b){
+
+const n=Number(b[0]);
+
+const win=Number(b[1])===1?1:0;
+
+add(`boat:${n}`,win);
+
+if(b[3]!=null)
+
+add(`grade:${n}:${grade(b[3])}`,win);
+
+if(b[2]!=null)
+
+add(`player:${n}:${b[2]}`,win);
+
+}
+
+}
+
+function estimate(k,prior,w){
+
+const [n,wins]=counts.get(k)||[0,0];
+
+return (wins+prior*w)/(n+w);
+
+}
+
+const d=day();
+
+const venue=$16('venue');
+
+const venueName=
+
+venue.options[venue.selectedIndex]
+
+?.textContent.trim()||'';
+
+let stadium=names.indexOf(venueName)+1;
+
+if(!stadium)
+
+stadium=names.indexOf(venue.value)+1;
+
+if(!stadium)
+
+stadium=Number(venue.value);
+
+const race=Number(
+
+String($16('race').value).replace(/R/i,'')
+
+);
+
+if(!(stadium>=1&&stadium<=24))
+
+throw new Error('会場番号を取得できません');
+
+const url=
+
+'https://boatraceopenapi.github.io/api/v1/'
+
++d.slice(0,4)+'/'+d+'.json';
+
+const res=await fetch(url);
+
+if(!res.ok)
+
+throw new Error('出走表を取得できません');
+
+const data=await res.json();
+
+const item=
+
+data.programs?.stadiums?.[stadium]
+
+?.races?.[race];
+
+if(!item?.racers)
+
+throw new Error('選択レースの出走表がありません');
+
+if(key()!==currentKey)
+
+throw new Error('レースが変更されました');
+
+const boats=Object.values(item.racers)
+
+.map(b=>{
+
+const n=Number(b.entry_number);
+
+const base=estimate(
+
+`boat:${n}`,1/6,20
+
+);
+
+const g=estimate(
+
+`grade:${n}:${grade(b.rank_number_source)}`,
+
+base,30
+
+);
+
+const p=estimate(
+
+`player:${n}:${b.number}`,
+
+g,40
+
+);
+
+return {
+
+n,
+
+score:Math.max(.001,.8*g+.2*p)
+
+};
+
+});
+
+if(boats.length!==6||
+
+new Set(boats.map(b=>b.n)).size!==6||
+
+boats.some(b=>b.n<1||b.n>6||
+
+!Number.isFinite(b.n)))
+
+throw new Error('6艇のデータが必要です');
+
+const total=boats.reduce(
+
+(s,b)=>s+b.score,0
+
+);
+
+for(const b of boats)
+
+b.p=b.score/total;
+
+const combinations=[];
+
+for(const a of boats)
+
+for(const b of boats)
+
+for(const c of boats){
+
+if(new Set([a.n,b.n,c.n]).size!==3)
+
+continue;
+
+const probability=
+
+a.p*
+
+(b.p/(1-a.p))*
+
+(c.p/(1-a.p-b.p));
+
+combinations.push({
+
+name:`${a.n}-${b.n}-${c.n}`,
+
+p:probability
+
+});
+
+}
+
+combinations.sort((a,b)=>b.p-a.p);
+
+return {
+
+key:currentKey,
+
+rows,
+
+combinations
+
+};
+
+}
+
+function table(title,items){
+
+if(!items.length)
+
+return `<h3>${title}</h3><p>該当データなし</p>`;
+
+return `
+
+<h3>${title}</h3>
+
+<table>
+
+<tr>
+
+<th>3連単</th>
+
+<th>推定確率</th>
+
+<th>オッズ</th>
+
+<th>期待回収率</th>
+
+</tr>
+
+${items.map(r=>`
+
+<tr>
+
+<td><strong>${r.name}</strong></td>
+
+<td>${pct(r.p)}</td>
+
+<td>${r.o!=null?r.o.toFixed(1):'―'}</td>
+
+<td>${r.o!=null?pct(r.p*r.o):'―'}</td>
+
+</tr>
+
+`).join('')}
+
+</table>
+
+`;
+
+}
+
+function confirmedOdds(){
+
+if(!$16('v15confirmed').checked)
+
+return new Map();
+
+return oddsParse($16('v15odds').value);
+
+}
+
+$16('v16run').onclick=async function(){
+
+this.disabled=true;
+
+invalidate();
+
+try{
+
+if(sport!=='boat')
+
+throw new Error('現在は競艇に対応しています');
+
+$16('v16status').textContent=
+
+'統計分析中...';
+
+model=await predict();
+
+const odds=confirmedOdds();
+
+const list=model.combinations.map(r=>({
+
+...r,
+
+o:odds.get(r.name)
+
+}));
+
+const high=list.filter(
+
+r=>r.o>=50&&r.o<100
+
+);
+
+const huge=list.filter(
+
+r=>r.o>=100
+
+);
+
+$16('v16output').innerHTML=`
+
+<p>学習データ：
+
+${model.rows.length}レース</p>
+
+<p>確認済みオッズ：
+
+${odds.size}/120点</p>
+
+${table(
+
+'本命・推定確率上位5点',
+
+list.slice(0,5)
+
+)}
+
+${table(
+
+'50〜100倍未満・推定確率上位5点',
+
+high.slice(0,5)
+
+)}
+
+${table(
+
+'万舟券・推定確率上位5点',
+
+huge.slice(0,5)
+
+)}
+
+<p>
+
+期待回収率は推定確率×オッズです。
+
+実際の収益を保証するものではありません。
+
+</p>
+
+<p>
+
+分析信頼度：
+
+過去データ件数は
+
+${model.rows.length>=1000?'1000件以上':'1000件未満'}。
+
+個別レースの予測精度は未検証です。
+
+</p>
+
+${odds.size<120?
+
+'<p>オッズ未入力・未確認の組み合わせがあります。</p>'
+
+:''}
+
+`;
+
+$16('v16status').textContent=
+
+'分析完了';
+
+}catch(e){
+
+model=null;
+
+$16('v16status').textContent=
+
+'分析エラー：'+e.message;
+
+}finally{
+
+this.disabled=false;
+
+}
+
+};
+
+function nums(id){
+
+const value=$16(id).value.normalize('NFKC');
+
+if(!/^[1-6\s,、]+$/.test(value))
+
+throw new Error('1〜6の数字を入力してください');
+
+const result=[
+
+...new Set(value.match(/[1-6]/g)||[])
+
+];
+
+if(!result.length)
+
+throw new Error('艇番を入力してください');
+
+return result;
+
+}
+
+$16('v16check').onclick=function(){
+
+try{
+
+if(sport!=='boat')
+
+throw new Error('競艇レースを選択してください');
+
+const a=nums('v16first');
+
+const b=nums('v16second');
+
+const c=nums('v16third');
+
+const money=Number($16('v16money').value);
+
+if(!Number.isSafeInteger(money)||
+
+money<100||money%100!==0)
+
+throw new Error('100円単位で入力してください');
+
+const selected=new Set();
+
+for(const i of a)
+
+for(const j of b)
+
+for(const k of c){
+
+if(new Set([i,j,k]).size===3)
+
+selected.add(`${i}-${j}-${k}`);
+
+}
+
+if(!selected.size)
+
+throw new Error('有効な組み合わせがありません');
+
+const rows=history().filter(r=>
+
+Number.isFinite(r.p)&&r.p>0
+
+);
+
+let hits=0;
+
+let returns=0;
+
+for(const r of rows){
+
+if(selected.has(actual(r))){
+
+hits++;
+
+returns+=r.p*money/100;
+
+}
+
+}
+
+const cost=
+
+selected.size*money*rows.length;
+
+const odds=confirmedOdds();
+
+let expected=null;
+
+let probability=null;
+
+if(model&&model.key===key()){
+
+const chosen=model.combinations.filter(
+
+r=>selected.has(r.name)
+
+);
+
+probability=chosen.reduce(
+
+(s,r)=>s+r.p,0
+
+);
+
+if(chosen.length===selected.size&&
+
+chosen.every(r=>odds.has(r.name))){
+
+expected=chosen.reduce(
+
+(s,r)=>s+r.p*odds.get(r.name),0
+
+)/selected.size;
+
+}
+
+}
+
+$16('v16form').innerHTML=`
+
+<h3>フォーメーション確認</h3>
+
+<table>
+
+<tr><td>1着</td><td>${a.join('・')}</td></tr>
+
+<tr><td>2着</td><td>${b.join('・')}</td></tr>
+
+<tr><td>3着</td><td>${c.join('・')}</td></tr>
+
+<tr><td>点数</td><td>${selected.size}点</td></tr>
+
+<tr><td>仮想合計金額</td>
+
+<td>${(selected.size*money).toLocaleString()}円</td></tr>
+
+<tr><td>推定的中率</td>
+
+<td>${probability===null?'未計算':pct(probability)}</td></tr>
+
+<tr><td>期待回収率</td>
+
+<td>${expected===null?'オッズまたは予測不足':pct(expected)}</td></tr>
+
+</table>
+
+<details>
+
+<summary>全組み合わせ</summary>
+
+<p>${[...selected].join(' ／ ')}</p>
+
+</details>
+
+<h3>過去データ検証</h3>
+
+<table>
+
+<tr><td>検証対象</td><td>${rows.length}R</td></tr>
+
+<tr><td>的中回数</td><td>${hits}回</td></tr>
+
+<tr><td>実測的中率</td>
+
+<td>${pct(hits/rows.length)}</td></tr>
+
+<tr><td>実測回収率</td>
+
+<td>${pct(returns/cost)}</td></tr>
+
+<tr><td>仮想収支</td>
+
+<td>${(returns-cost).toLocaleString()}円</td></tr>
+
+</table>
+
+<p>
+
+過去の全対象レースで同じ組み合わせを
+
+使用した場合の仮想検証です。
+
+今回の予測モデルの実績とは異なります。
+
+</p>
+
+`;
+
+}catch(e){
+
+$16('v16form').textContent=e.message;
+
+}
+
+};
+
+const previous=analyse;
+
+analyse=async function(){
+
+invalidate();
+
+return await previous();
+
+};
+
+const heading=document.querySelector('h1 small');
+
+if(heading)heading.textContent='V16';
+
+document.title='AI RACE V16';
+
+})();
+
+</script>
