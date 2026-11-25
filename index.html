@@ -599,3 +599,170 @@ update();
 </body>
 
 </html>
+<script>
+
+const originalAnalyse = analyse;
+
+analyse = async function(){
+
+ const mode = sport;
+
+ const day = $('date').value.replace(/-/g,'');
+
+ const stadium = venues.boat.split(' ').indexOf($('venue').value)+1;
+
+ const race = parseInt($('race').value);
+
+ document.getElementById('extraV4')?.remove();
+
+ await originalAnalyse();
+
+ if(mode!=='boat'||sport!==mode)return;
+
+ if($('date').value.replace(/-/g,'')!==day)return;
+
+ if(venues.boat.split(' ').indexOf($('venue').value)+1!==stadium)return;
+
+ if(parseInt($('race').value)!==race)return;
+
+ const box=document.createElement('div');
+
+ box.id='extraV4';
+
+ box.className='card';
+
+ box.textContent='展示・結果データ取得中...';
+
+ $('details').parentElement.after(box);
+
+ try{
+
+ const url=`https://boatraceopenapi.github.io/api/v1/${day.slice(0,4)}/${day}.json`;
+
+ const res=await fetch(url,{cache:'no-store'});
+
+ if(!res.ok)throw new Error('HTTP '+res.status);
+
+ const data=await res.json();
+
+ const r=data.programs?.stadiums?.[stadium]?.races?.[race];
+
+ if(!r)throw new Error('レース情報なし');
+
+ const p=r.preview||{};
+
+ const result=r.result||{};
+
+ const value=(x)=>esc(x??'未取得');
+
+ box.innerHTML=`
+
+ <h3>直前情報・展示</h3>
+
+ <table>
+
+ <tr><td>天候</td><td>${value(p.weather_number_source)}</td></tr>
+
+ <tr><td>風向</td><td>${value(p.wind_direction_number_source)}</td></tr>
+
+ <tr><td>風速(m)</td><td>${value(p.wind_speed)}</td></tr>
+
+ <tr><td>波高(cm)</td><td>${value(p.wave_height)}</td></tr>
+
+ <tr><td>気温(℃)</td><td>${value(p.air_temperature)}</td></tr>
+
+ <tr><td>水温(℃)</td><td>${value(p.water_temperature)}</td></tr>
+
+ </table>
+
+ <h3>展示成績</h3>
+
+ <div class="scroll">
+
+ <table>
+
+ <tr><th>艇</th><th>進入</th><th>展示ST</th><th>タイム</th><th>チルト</th></tr>
+
+ ${[1,2,3,4,5,6].map(n=>{
+
+ const x=p.racers?.[n]||{};
+
+ return `<tr>
+
+ <td>${n}</td>
+
+ <td>${value(x.course_number)}</td>
+
+ <td>${value(x.start_timing_source??x.start_timing)}</td>
+
+ <td>${value(x.exhibition_time)}</td>
+
+ <td>${value(x.tilt_adjustment)}</td>
+
+ </tr>`;
+
+ }).join('')}
+
+ </table>
+
+ </div>
+
+ <details>
+
+ <summary>確定レース結果・払戻金</summary>
+
+ <table>
+
+ <tr><th>着順</th><th>艇</th><th>選手名</th></tr>
+
+ ${Object.values(result.racers||{})
+
+ .filter(x=>x.place_number>=1&&x.place_number<=6)
+
+ .sort((a,b)=>a.place_number-b.place_number)
+
+ .map(x=>`<tr><td>${value(x.place_number)}</td><td>${value(x.entry_number)}</td><td>${value(x.name)}</td></tr>`).join('')}
+
+ </table>
+
+ <h4>3連単</h4>
+
+ ${showPayout(result.payouts?.trifecta)}
+
+ <h4>3連複</h4>
+
+ ${showPayout(result.payouts?.trio)}
+
+ <p>備考：${value(result.remarks)}</p>
+
+ <p>返還艇：${Array.isArray(result.refunds)?esc(result.refunds.join('・')||'なし'):'未取得'}</p>
+
+ </details>
+
+ <p class="warn">非公式データ・最新情報に遅れがある場合があります。</p>`;
+
+ }catch(e){
+
+ box.textContent='追加情報の取得失敗：'+e.message;
+
+ }
+
+};
+
+function showPayout(items){
+
+ if(!Array.isArray(items)||!items.length){
+
+ return '<p>結果未取得</p>';
+
+ }
+
+ return items.map(x=>`<p>${esc(x.combination)}：${x.amount==null?esc(x.label??'未取得'):Number(x.amount).toLocaleString()+'円'}</p>`).join('');
+
+}
+
+document.querySelector('h1 small').textContent='V4';
+
+document.title='AI RACE V4';
+
+</script>
