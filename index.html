@@ -1,0 +1,285 @@
+ 
+
+<!DOCTYPE html>
+
+<html lang="ja">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+
+<meta name="theme-color" content="#101923">
+
+<title>AI RACE</title>
+
+<style>
+
+*{box-sizing:border-box}
+
+body{background:#101923;color:#fff;font-family:-apple-system,sans-serif;margin:0;padding:18px}
+
+h1{color:#65dfba;margin-bottom:4px}
+
+p{color:#aab9cb;font-size:14px}
+
+.card{background:#1e2c3b;border-radius:16px;padding:16px;margin:15px 0}
+
+button,select,input{font-size:16px;border:0;border-radius:10px;padding:12px}
+
+button{background:#65dfba;color:#10251e;font-weight:bold;width:100%;margin:5px 0}
+
+select,input{width:100%;background:#304154;color:white;margin:6px 0}
+
+.tabs{display:flex;gap:10px}
+
+.tabs button{background:#304154;color:white}
+
+.tabs .active{background:#65dfba;color:#10251e}
+
+table{width:100%;border-collapse:collapse;text-align:center;font-size:14px}
+
+td,th{padding:10px 3px;border-bottom:1px solid #405063}
+
+details{background:#29394b;border-radius:12px;padding:14px;margin:10px 0}
+
+summary{cursor:pointer;font-weight:bold}
+
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+.stat{background:#29394b;padding:14px;border-radius:12px}
+
+.stat strong{display:block;font-size:25px;margin-top:8px}
+
+.warn{color:#ffd08a}
+
+small{color:#aab9cb}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>AI RACE</h1>
+
+<p>競馬・競艇 データ分析</p>
+
+<div class="card">
+
+<div class="tabs">
+
+<button id="boat" class="active" onclick="change('boat')">競艇</button>
+
+<button id="horse" onclick="change('horse')">競馬</button>
+
+</div>
+
+<p>開催場</p>
+
+<select id="venue"></select>
+
+<p>レース番号</p>
+
+<select id="race"></select>
+
+<button onclick="analyse()">分析画面を表示</button>
+
+</div>
+
+<div id="result" hidden>
+
+<div class="card">
+
+<h2 id="raceTitle"></h2>
+
+<p class="warn">サンプルデータ・実際の予想ではありません</p>
+
+<h3>分析項目</h3>
+
+<table id="factors"></table>
+
+</div>
+
+<div class="card">
+
+<h3>着順別成績</h3>
+
+<table id="rates"></table>
+
+<p>実際の確率はデータ接続後に算出します。</p>
+
+</div>
+
+<div class="card">
+
+<h3>仮想購入・収支計算</h3>
+
+<label>購入方式</label>
+
+<select id="method">
+
+<option>3連単フォーメーション</option>
+
+<option>3連複フォーメーション</option>
+
+<option>BOX</option>
+
+<option>その他</option>
+
+</select>
+
+<details>
+
+<summary>チェック表を表示</summary>
+
+<table id="checks"></table>
+
+<small>入力確認用のチェック表です。</small>
+
+</details>
+
+<label>購入点数</label>
+
+<input id="points" type="number" min="1" value="1">
+
+<label>1点の金額（円）</label>
+
+<input id="stake" type="number" min="100" value="100">
+
+<label>払戻総額（円）</label>
+
+<input id="payout" type="number" min="0" value="0">
+
+<button onclick="save()">仮想成績を記録</button>
+
+</div>
+
+</div>
+
+<div class="card">
+
+<h3>累計成績</h3>
+
+<div class="stats">
+
+<div class="stat">記録数<strong id="count">0</strong></div>
+
+<div class="stat">的中率<strong id="hit">0%</strong></div>
+
+<div class="stat">回収率<strong id="roi">0%</strong></div>
+
+<div class="stat">累計収支<strong id="profit">0円</strong></div>
+
+</div>
+
+<details>
+
+<summary>分析履歴</summary>
+
+<div id="history"></div>
+
+</details>
+
+</div>
+
+<script>
+
+let sport='boat';
+
+const venues={
+
+boat:'桐生 戸田 江戸川 平和島 多摩川 浜名湖 蒲郡 常滑 津 三国 びわこ 住之江 尼崎 鳴門 丸亀 児島 宮島 徳山 下関 若松 芦屋 福岡 唐津 大村',
+
+horse:'札幌 函館 福島 新潟 東京 中山 中京 京都 阪神 小倉'
+
+};
+
+const $=id=>document.getElementById(id);
+
+let records=JSON.parse(localStorage.getItem('raceRecords')||'[]');
+
+function change(s){
+
+sport=s;
+
+$('boat').className=s==='boat'?'active':'';
+
+$('horse').className=s==='horse'?'active':'';
+
+$('venue').innerHTML=venues[s].split(' ').map(v=>`<option>${v}</option>`).join('');
+
+$('result').hidden=true;
+
+}
+
+$('race').innerHTML=Array.from({length:12},(_,i)=>`<option>${i+1}R</option>`).join('');
+
+function analyse(){
+
+$('result').hidden=false;
+
+$('raceTitle').textContent=$('venue').value+$('race').value;
+
+let factors=sport==='boat'?
+
+['選手別成績','級別','コース別成績','モーター','展示タイム','平均ST','水質・潮位','風速・波高','オッズ']:
+
+['競走馬成績','騎手成績','距離適性','枠順','馬場状態','調教','馬体重','展開','オッズ'];
+
+$('factors').innerHTML=factors.map(f=>`<tr><td>${f}</td><td>未取得</td></tr>`).join('');
+
+let n=sport==='boat'?6:18;
+
+$('rates').innerHTML='<tr><th>番号</th><th>1着</th><th>2着</th><th>3着</th></tr>'+Array.from({length:n},(_,i)=>`<tr><td>${i+1}</td><td>―</td><td>―</td><td>―</td></tr>`).join('');
+
+$('checks').innerHTML='<tr><th>番号</th><th>1着</th><th>2着</th><th>3着</th></tr>'+Array.from({length:n},(_,i)=>`<tr><td>${i+1}</td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>`).join('');
+
+}
+
+function save(){
+
+let cost=Number($('points').value)*Number($('stake').value);
+
+let payout=Number($('payout').value);
+
+if(!Number.isFinite(cost)||cost<=0||!Number.isFinite(payout)||payout<0)return;
+
+records.push({race:$('raceTitle').textContent,cost,payout});
+
+localStorage.setItem('raceRecords',JSON.stringify(records));
+
+update();
+
+}
+
+function update(){
+
+let cost=records.reduce((s,r)=>s+r.cost,0);
+
+let pay=records.reduce((s,r)=>s+r.payout,0);
+
+$('count').textContent=records.length;
+
+$('hit').textContent=records.length?(records.filter(r=>r.payout>0).length/records.length*100).toFixed(1)+'%':'0%';
+
+$('roi').textContent=cost?(pay/cost*100).toFixed(1)+'%':'0%';
+
+$('profit').textContent=(pay-cost).toLocaleString()+'円';
+
+$('history').textContent=records.slice().reverse().map(r=>r.race+'：'+(r.payout-r.cost).toLocaleString()+'円').join(' ／ ');
+
+}
+
+change('boat');
+
+update();
+
+</script>
+
+</body>
+
+</html>
