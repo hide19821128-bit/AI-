@@ -1394,3 +1394,402 @@ document.querySelector('h1 small').textContent='V5';
 document.title='AI RACE V5';
 
 </script>
+<script>
+
+const v6=document.createElement('div');
+
+v6.className='card';
+
+v6.innerHTML=`
+
+<h2>詳細統計・V6</h2>
+
+<p>過去の実測データを端末に保存して分析します。</p>
+
+<button id="v6load">指定期間のデータを保存・集計</button>
+
+<button id="v6show">保存済みデータを表示</button>
+
+<p id="v6status"></p>
+
+<div id="v6out"></div>
+
+`;
+
+histCard.after(v6);
+
+const v6key='aiRaceHistoryV6';
+
+async function v6get(url){
+
+ try{
+
+ const r=await fetch(url);
+
+ if(!r.ok)return null;
+
+ return await r.json();
+
+ }catch(e){return null}
+
+}
+
+async function v6collect(){
+
+ const from=new Date($('histFrom').value+'T00:00:00Z');
+
+ const to=new Date($('histTo').value+'T00:00:00Z');
+
+ if(!Number.isFinite(+from)||!Number.isFinite(+to)||from>to){
+
+ alert('集計期間を確認してください');
+
+ return;
+
+ }
+
+ const days=[];
+
+ for(let d=new Date(from);d<=to;d.setUTCDate(d.getUTCDate()+1)){
+
+ days.push(d.toISOString().slice(0,10).replace(/-/g,''));
+
+ if(days.length>31){
+
+ alert('最大31日間です');return;
+
+ }
+
+ }
+
+ $('v6load').disabled=true;
+
+ const records=[];
+
+ const failed=[];
+
+ const base='https://boatraceopenapi.github.io/';
+
+ try{
+
+ for(let i=0;i<days.length;i++){
+
+ const day=days[i];
+
+ const path=day.slice(0,4)+'/'+day+'.json';
+
+ $('v6status').textContent=
+
+ '取得中 '+(i+1)+'/'+days.length+'日';
+
+ const [rd,pd,ed]=await Promise.all([
+
+ v6get(base+'results/v3/'+path),
+
+ v6get(base+'api/v1/'+path),
+
+ v6get(base+'previews/v2/'+path)
+
+ ]);
+
+ if(!Array.isArray(rd?.results)){
+
+ failed.push(day);continue;
+
+ }
+
+ const previews=new Map(
+
+ (ed?.previews||[]).map(p=>[
+
+ p.race_stadium_number+'-'+p.race_number,p
+
+ ]));
+
+ for(const r of rd.results){
+
+ const boats=r.boats||[];
+
+ const top=boats.filter(b=>
+
+ Number(b.racer_place_number)>=1&&
+
+ Number(b.racer_place_number)<=3);
+
+ if(top.length!==3||
+
+ new Set(top.map(b=>Number(b.racer_place_number))).size!==3)
+
+ continue;
+
+ const prog=pd?.programs?.stadiums?.[r.stadium_number]?.races?.[r.number];
+
+ const pre=previews.get(r.stadium_number+'-'+r.number);
+
+ const payout=r.payouts?.trifecta;
+
+ const pay=payout?.length===1?
+
+ Number(payout[0].amount):null;
+
+ records.push({
+
+ d:day,
+
+ s:Number(r.stadium_number),
+
+ r:Number(r.number),
+
+ w:pre?.race_wind??null,
+
+ p:pay>0?pay:null,
+
+ b:boats.map(b=>{
+
+ const n=Number(b.racer_boat_number);
+
+ const x=prog?.racers?.[n];
+
+ const e=pre?.boats?.find(y=>
+
+ Number(y.racer_boat_number)===n);
+
+ return [
+
+ n,
+
+ Number(b.racer_place_number)||0,
+
+ b.racer_number,
+
+ x?.rank_number_source??null,
+
+ e?.racer_exhibition_time??null,
+
+ e?.racer_course_number??null
+
+ ];
+
+ })
+
+ });
+
+ }
+
+ }
+
+ const data={records,failed,days};
+
+ try{
+
+ localStorage.setItem(v6key,JSON.stringify(data));
+
+ $('v6status').textContent=
+
+ '保存成功：'+records.length.toLocaleString()+'レース';
+
+ }catch(e){
+
+ $('v6status').textContent=
+
+ '端末保存失敗・今回の集計のみ表示';
+
+ }
+
+ v6render(data);
+
+ }catch(e){
+
+ $('v6status').textContent='取得エラー：'+e.message;
+
+ }finally{
+
+ $('v6load').disabled=false;
+
+ }
+
+}
+
+function v6render(data){
+
+ const target=Number($('histVenue').value);
+
+ const rows=data.records.filter(r=>!target||r.s===target);
+
+ const grades=['A1','A2','B1','B2'];
+
+ const pct=(n,d)=>d?(100*n/d).toFixed(1)+'%':'―';
+
+ let html='<p>対象：'+rows.length.toLocaleString()+
+
+ 'レース</p>';
+
+ html+='<p>結果取得失敗日：'+
+
+ esc(data.failed.join('、')||'なし')+'</p>';
+
+ html+='<h3>艇番×級別の実測1着率</h3>';
+
+ html+='<table><tr><th>艇</th>'+
+
+ grades.map(g=>'<th>'+g+'</th>').join('')+'</tr>';
+
+ for(let n=1;n<=6;n++){
+
+ html+='<tr><td>'+n+'</td>';
+
+ for(const g of grades){
+
+ const a=rows.flatMap(r=>r.b.filter(b=>
+
+ b[0]===n&&b[3]===g&&b[1]>=1&&b[1]<=6));
+
+ html+='<td>'+pct(a.filter(b=>b[1]===1).length,a.length)+
+
+ '<br><small>'+a.length+'走</small></td>';
+
+ }
+
+ html+='</tr>';
+
+ }
+
+ html+='</table>';
+
+ html+='<h3>競艇場別の着順統計</h3>';
+
+ html+='<table><tr><th>会場</th><th>件数</th><th>1号艇1着率</th></tr>';
+
+ venues.boat.split(' ').forEach((name,i)=>{
+
+ const a=rows.filter(r=>r.s===i+1);
+
+ if(!a.length)return;
+
+ const wins=a.filter(r=>r.b.some(b=>
+
+ b[0]===1&&b[1]===1)).length;
+
+ html+='<tr><td>'+name+'</td><td>'+
+
+ a.length+'</td><td>'+pct(wins,a.length)+'</td></tr>';
+
+ });
+
+ html+='</table>';
+
+ html+='<h3>風速別の実測統計</h3>';
+
+ html+='<table><tr><th>風速</th><th>件数</th><th>1号艇1着率</th></tr>';
+
+ const winds=[
+
+ ['0〜1m',0,1],
+
+ ['2〜3m',2,3],
+
+ ['4〜5m',4,5],
+
+ ['6m以上',6,100]
+
+ ];
+
+ for(const [label,min,max] of winds){
+
+ const a=rows.filter(r=>r.w!=null&&
+
+ r.b.some(b=>Number(b[4])>0)&&
+
+ Number(r.w)>=min&&Number(r.w)<=max);
+
+ const wins=a.filter(r=>r.b.some(b=>
+
+ b[0]===1&&b[1]===1)).length;
+
+ html+='<tr><td>'+label+'</td><td>'+
+
+ a.length+'</td><td>'+pct(wins,a.length)+'</td></tr>';
+
+ }
+
+ html+='</table>';
+
+ html+='<h3>展示順位別の実測成績</h3>';
+
+ html+='<table><tr><th>展示順位</th><th>件数</th><th>1着率</th><th>3着内</th></tr>';
+
+ const ex=Array.from({length:6},()=>[0,0,0]);
+
+ for(const r of rows){
+
+ const b=r.b.filter(x=>Number(x[4])>0);
+
+ if(b.length!==6)continue;
+
+ if(new Set(b.map(x=>Number(x[4]))).size!==6)continue;
+
+ b.sort((a,c)=>Number(a[4])-Number(c[4]));
+
+ b.forEach((x,i)=>{
+
+ ex[i][0]++;
+
+ if(x[1]===1)ex[i][1]++;
+
+ if(x[1]>=1&&x[1]<=3)ex[i][2]++;
+
+ });
+
+ }
+
+ ex.forEach((a,i)=>{
+
+ html+='<tr><td>'+(i+1)+'</td><td>'+a[0]+
+
+ '</td><td>'+pct(a[1],a[0])+
+
+ '</td><td>'+pct(a[2],a[0])+'</td></tr>';
+
+ });
+
+ html+='</table>';
+
+ html+='<p class="warn">過去の記述統計です。将来の的中確率ではありません。欠損・同着・返還等の処理には制限があります。</p>';
+
+ $('v6out').innerHTML=html;
+
+}
+
+$('v6load').onclick=v6collect;
+
+$('v6show').onclick=function(){
+
+ try{
+
+ const raw=localStorage.getItem(v6key);
+
+ if(!raw){
+
+ alert('保存済みデータがありません');return;
+
+ }
+
+ const data=JSON.parse(raw);
+
+ v6render(data);
+
+ $('v6status').textContent='保存済みデータを表示中';
+
+ }catch(e){
+
+ $('v6status').textContent='読み込み失敗';
+
+ }
+
+};
+
+document.querySelector('h1 small').textContent='V6';
+
+document.title='AI RACE V6';
+
+</script>
