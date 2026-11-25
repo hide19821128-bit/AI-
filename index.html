@@ -5404,3 +5404,1490 @@ document.title='AI RACE V16';
 })();
 
 </script>
+
+
+<script>
+
+(()=>{
+
+const E=id=>document.getElementById(id);
+
+if(E('v17plus'))return;
+
+if(!E('v16run')||!E('v15ocr'))return;
+
+const panel=document.createElement('div');
+
+panel.id='v17plus';
+
+panel.className='card';
+
+panel.innerHTML=`
+
+<h2>AI RACE V17 改良版</h2>
+
+<h3>画像認識精度改善</h3>
+
+<p>
+
+画像拡大・コントラスト補正による
+
+2段階画像認識を行います。
+
+</p>
+
+<button id="v17ocr">
+
+高精度オッズ画像認識
+
+</button>
+
+<p id="v17ocrstatus"></p>
+
+<div id="v17review"></div>
+
+<h3>AI予測モデル実力検証</h3>
+
+<label>最低学習レース数</label>
+
+<select id="v17minimum">
+
+<option value="100">100レース</option>
+
+<option value="500" selected>500レース</option>
+
+<option value="1000">1000レース</option>
+
+</select>
+
+<button id="v17test">
+
+AI予測の実力を検証
+
+</button>
+
+<p id="v17teststatus"></p>
+
+<div id="v17testout"></div>
+
+`;
+
+const oldTest=E('v17run');
+
+if(oldTest){
+
+oldTest.closest('.card').remove();
+
+}
+
+E('v16run').closest('.card').after(panel);
+
+const pct=v=>Number.isFinite(v)?
+
+(v*100).toFixed(2)+'%':'―';
+
+const yen=v=>
+
+Math.round(v).toLocaleString('ja-JP')+'円';
+
+function raceKey(){
+
+return [
+
+sport,
+
+E('date').value,
+
+E('venue').value,
+
+E('race').value
+
+].join('|');
+
+}
+
+let pending=false;
+
+let reviewKey=null;
+
+let candidates=[];
+
+function clearAnalysis(){
+
+E('v15confirmed').checked=false;
+
+E('v15odds').dispatchEvent(
+
+new Event('input')
+
+);
+
+}
+
+function resetReview(){
+
+pending=false;
+
+reviewKey=null;
+
+candidates=[];
+
+E('v17review').innerHTML='';
+
+E('v17ocrstatus').textContent='';
+
+}
+
+for(const id of ['date','venue','race']){
+
+E(id).addEventListener(
+
+'change',resetReview
+
+);
+
+}
+
+E('v15images').addEventListener(
+
+'change',resetReview
+
+);
+
+E('v15clear').addEventListener(
+
+'click',resetReview
+
+);
+
+if(E('v16repair')){
+
+E('v16repair').style.display='none';
+
+}
+
+if(E('v16ocrstatus')){
+
+E('v16ocrstatus').style.display='none';
+
+}
+
+async function loadOCR(){
+
+if(window.Tesseract)return;
+
+await new Promise((resolve,reject)=>{
+
+const s=document.createElement('script');
+
+s.src=
+
+'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+
+s.onload=resolve;
+
+s.onerror=()=>reject(
+
+new Error('OCRライブラリ取得失敗')
+
+);
+
+document.head.appendChild(s);
+
+});
+
+}
+
+async function preprocess(file,mode){
+
+const img=new Image();
+
+const url=URL.createObjectURL(file);
+
+try{
+
+await new Promise((resolve,reject)=>{
+
+img.onload=resolve;
+
+img.onerror=reject;
+
+img.src=url;
+
+});
+
+const scale=Math.min(
+
+2.2,
+
+3200/Math.max(
+
+img.naturalWidth,img.naturalHeight
+
+)
+
+);
+
+const canvas=document.createElement('canvas');
+
+canvas.width=Math.round(
+
+img.naturalWidth*scale
+
+);
+
+canvas.height=Math.round(
+
+img.naturalHeight*scale
+
+);
+
+const ctx=canvas.getContext('2d');
+
+ctx.imageSmoothingEnabled=true;
+
+ctx.imageSmoothingQuality='high';
+
+ctx.fillStyle='white';
+
+ctx.fillRect(
+
+0,0,canvas.width,canvas.height
+
+);
+
+ctx.drawImage(
+
+img,0,0,canvas.width,canvas.height
+
+);
+
+const image=ctx.getImageData(
+
+0,0,canvas.width,canvas.height
+
+);
+
+const p=image.data;
+
+for(let i=0;i<p.length;i+=4){
+
+let g=
+
+.299*p[i]+
+
+.587*p[i+1]+
+
+.114*p[i+2];
+
+if(mode===1){
+
+g=Math.max(
+
+0,
+
+Math.min(255,(g-128)*1.25+128)
+
+);
+
+}
+
+if(mode===2){
+
+g=Math.max(
+
+0,
+
+Math.min(255,(g-128)*1.7+128)
+
+);
+
+}
+
+p[i]=g;
+
+p[i+1]=g;
+
+p[i+2]=g;
+
+}
+
+ctx.putImageData(image,0,0);
+
+return canvas;
+
+}finally{
+
+URL.revokeObjectURL(url);
+
+}
+
+}
+
+function parseOCR(text){
+
+const map=new Map();
+
+const re=
+
+/(?:^|[^0-9])([1-6])\s*[-－−ー]\s*([1-6])\s*[-－−ー]\s*([1-6])\s+([0-9,]+(?:\s*\.\s*[0-9]+)?)(?![0-9.])/g;
+
+for(const line of text.normalize('NFKC')
+
+.split(/\r?\n/)){
+
+for(const m of line.matchAll(re)){
+
+const nums=m.slice(1,4);
+
+if(new Set(nums).size!==3)
+
+continue;
+
+const raw=m[4]
+
+.replace(/,/g,'')
+
+.replace(/\s/g,'');
+
+const n=Number(raw);
+
+if(!Number.isFinite(n)||n<1)
+
+continue;
+
+const key=nums.join('-');
+
+if(!map.has(key))
+
+map.set(key,new Set());
+
+map.get(key).add(raw);
+
+}
+
+}
+
+return map;
+
+}
+
+function showReview(){
+
+const target=E('v17review');
+
+const suspicious=candidates.filter(
+
+x=>x.warning
+
+);
+
+target.innerHTML=`
+
+<h3>画像認識結果</h3>
+
+<p>
+
+抽出：${candidates.length}/120点
+
+</p>
+
+<p style="color:${
+
+suspicious.length?'#ff9999':'#65dfba'
+
+}">
+
+要確認：${suspicious.length}件
+
+</p>
+
+<p>
+
+小数点欠落や認識結果の不一致を
+
+確認してください。
+
+</p>
+
+<div style="overflow-x:auto">
+
+<table>
+
+<tr>
+
+<th>3連単</th>
+
+<th>認識値</th>
+
+<th>確定値</th>
+
+<th>確認</th>
+
+</tr>
+
+${candidates.map((r,i)=>`
+
+<tr style="${
+
+r.warning?
+
+'background:rgba(255,70,70,.12)':''
+
+}">
+
+<td>${r.key}</td>
+
+<td>${r.values.join(' / ')}
+
+${r.warning?
+
+'<small style="color:#ff9999">要確認</small>'
+
+:''
+
+}
+
+</td>
+
+<td>
+
+<input id="v17val${i}"
+
+inputmode="decimal"
+
+value="${r.warning?'':r.values[0]}"
+
+placeholder="訂正"
+
+style="min-width:75px">
+
+</td>
+
+<td>
+
+<input type="checkbox"
+
+id="v17ok${i}"
+
+${r.warning?'':'checked'}>
+
+</td>
+
+</tr>
+
+`).join('')}
+
+</table>
+
+</div>
+
+<button id="v17apply">
+
+確認済みオッズを反映
+
+</button>
+
+<p id="v17applystatus"></p>
+
+`;
+
+candidates.forEach((r,i)=>{
+
+E('v17val'+i).oninput=()=>{
+
+E('v17ok'+i).checked=false;
+
+};
+
+});
+
+E('v17apply').onclick=function(){
+
+try{
+
+if(reviewKey!==raceKey())
+
+throw new Error(
+
+'対象レースが変更されています'
+
+);
+
+const lines=[];
+
+for(let i=0;i<candidates.length;i++){
+
+const r=candidates[i];
+
+const value=E('v17val'+i)
+
+.value.trim();
+
+if(!E('v17ok'+i).checked)
+
+throw new Error(
+
+r.key+'が未確認です'
+
+);
+
+if(!/^\d+(?:\.\d+)?$/.test(value)||
+
+Number(value)<1||
+
+!Number.isFinite(Number(value)))
+
+throw new Error(
+
+r.key+'のオッズを訂正してください'
+
+);
+
+lines.push(
+
+r.key+' '+Number(value).toFixed(1)
+
+);
+
+}
+
+E('v15odds').value=lines.join('\n');
+
+clearAnalysis();
+
+pending=false;
+
+E('v17applystatus').textContent=
+
+'反映完了。元画像と全件照合後、'+
+
+'V15の確認欄にチェックしてください。';
+
+}catch(e){
+
+E('v17applystatus').textContent=
+
+e.message;
+
+}
+
+};
+
+}
+
+async function improvedOCR(){
+
+let worker=null;
+
+const button=E('v17ocr');
+
+const original=E('v15ocr');
+
+const startKey=raceKey();
+
+try{
+
+if(sport!=='boat')
+
+throw new Error(
+
+'競艇を選択してください'
+
+);
+
+const files=Array.from(
+
+E('v15images').files
+
+);
+
+if(!files.length)
+
+throw new Error(
+
+先に画像を選択してください'
+
+);
+
+button.disabled=true;
+
+original.disabled=true;
+
+resetReview();
+
+E('v15odds').value='';
+
+E('v15raw').value='';
+
+E('v15out').innerHTML='';
+
+clearAnalysis();
+
+pending=true;
+
+reviewKey=startKey;
+
+E('v17ocrstatus').textContent=
+
+'画像認識準備中';
+
+await loadOCR();
+
+worker=await Tesseract.createWorker(
+
+'eng',1
+
+);
+
+await worker.setParameters({
+
+tessedit_char_whitelist:
+
+'0123456789.,- ',
+
+preserve_interword_spaces:'1'
+
+});
+
+const all=new Map();
+
+const raw=[];
+
+for(let i=0;i<files.length;i++){
+
+const passes=[];
+
+for(let mode=1;mode<=2;mode++){
+
+if(raceKey()!==startKey)
+
+throw new Error('レースが変更されました');
+
+E('v17ocrstatus').textContent=
+
+`画像${i+1}/${files.length}：認識${mode}/2`;
+
+const image=await preprocess(
+
+files[i],mode
+
+);
+
+const result=await worker.recognize(
+
+image
+
+);
+
+raw.push(result.data.text);
+
+passes.push(
+
+parseOCR(result.data.text)
+
+);
+
+image.width=1;
+
+image.height=1;
+
+}
+
+const keys=new Set(
+
+passes.flatMap(m=>[...m.keys()])
+
+);
+
+for(const k of keys){
+
+const a=passes[0].get(k)||new Set();
+
+const b=passes[1].get(k)||new Set();
+
+const values=new Set([...a,...b]);
+
+const warning=
+
+a.size!==1||
+
+b.size!==1||
+
+values.size!==1||
+
+[...values].some(v=>!v.includes('.'));
+
+const old=all.get(k);
+
+if(old){
+
+for(const v of values)
+
+old.values.add(v);
+
+old.warning=
+
+old.warning||
+
+warning||
+
+old.values.size!==1;
+
+}else{
+
+all.set(k,{values,warning});
+
+}
+
+}
+
+}
+
+if(raceKey()!==startKey)
+
+throw new Error('レースが変更されました');
+
+E('v15raw').value=raw.join('\n\n');
+
+candidates=[...all].map(([key,v])=>({
+
+key,
+
+values:[...v.values],
+
+warning:v.warning
+
+})).sort((a,b)=>
+
+a.key.localeCompare(b.key)
+
+);
+
+if(!candidates.length){
+
+pending=false;
+
+throw new Error(
+
+'抽出できませんでした。手動入力してください'
+
+);
+
+}
+
+showReview();
+
+E('v17ocrstatus').textContent=
+
+'高精度認識完了：'+
+
+candidates.length+'件';
+
+E('v15status').textContent=
+
+'V17で画像認識しました。確認欄を確認してください。';
+
+}catch(e){
+
+pending=false;
+
+E('v17ocrstatus').textContent=
+
+'認識エラー：'+e.message;
+
+}finally{
+
+if(worker){
+
+try{
+
+await worker.terminate();
+
+}catch(e){}
+
+}
+
+button.disabled=false;
+
+original.disabled=false;
+
+}
+
+}
+
+E('v17ocr').onclick=improvedOCR;
+
+E('v15ocr').onclick=improvedOCR;
+
+E('v15ocr').textContent=
+
+'高精度画像認識開始';
+
+E('v15confirmed').addEventListener(
+
+'change',function(){
+
+if(pending){
+
+this.checked=false;
+
+E('v17ocrstatus').textContent=
+
+'先にV17の認識結果を確認してください';
+
+}
+
+},true);
+
+for(const id of [
+
+'v15run','v16run','v16check'
+
+]){
+
+E(id).addEventListener(
+
+'click',e=>{
+
+if(pending){
+
+e.preventDefault();
+
+e.stopImmediatePropagation();
+
+E('v17ocrstatus').textContent=
+
+'未確認のオッズがあります';
+
+E('v17review').scrollIntoView({
+
+behavior:'smooth'
+
+});
+
+}
+
+},true);
+
+}
+
+function readData(){
+
+const data=JSON.parse(
+
+localStorage.getItem('aiRaceHistoryV6')
+
+||'null'
+
+);
+
+if(!Array.isArray(data?.records))
+
+throw new Error('保存データがありません');
+
+const unique=new Map();
+
+for(const r of data.records){
+
+if(!/^\d{8}$/.test(String(r.d)))
+
+continue;
+
+if(!Array.isArray(r.b)||r.b.length!==6)
+
+continue;
+
+if(!Number.isFinite(r.p)||r.p<=0)
+
+continue;
+
+const b=r.b.map(x=>[
+
+Number(x[0]),Number(x[1]),x[2],x[3]
+
+]);
+
+if(!b.every(x=>
+
+Number.isInteger(x[0])&&
+
+Number.isInteger(x[1])&&
+
+x[0]>=1&&x[0]<=6&&
+
+x[1]>=1&&x[1]<=6
+
+))continue;
+
+if(new Set(b.map(x=>x[0])).size!==6||
+
+new Set(b.map(x=>x[1])).size!==6)
+
+continue;
+
+unique.set(
+
+`${r.d}-${r.s}-${r.r}`,
+
+{...r,d:String(r.d),b}
+
+);
+
+}
+
+return [...unique.values()]
+
+.sort((a,b)=>
+
+a.d.localeCompare(b.d)||
+
+Number(a.s)-Number(b.s)||
+
+Number(a.r)-Number(b.r)
+
+);
+
+}
+
+function stats(){
+
+return {
+
+n:0,
+
+hits:0,
+
+cost:0,
+
+returns:0,
+
+miss:0,
+
+maxMiss:0,
+
+expected:0,
+
+brier:0
+
+};
+
+}
+
+function update(s,picks,actual,payout,p){
+
+const hit=picks.includes(actual);
+
+s.n++;
+
+s.cost+=picks.length*100;
+
+s.expected+=p;
+
+s.brier+=
+
+Math.pow(p-(hit?1:0),2);
+
+if(hit){
+
+s.hits++;
+
+s.returns+=payout;
+
+s.miss=0;
+
+}else{
+
+s.miss++;
+
+s.maxMiss=Math.max(
+
+s.maxMiss,s.miss
+
+);
+
+}
+
+}
+
+const labels=[
+
+'AI上位1点',
+
+'AI上位3点',
+
+'AI上位5点',
+
+'固定4点'
+
+];
+
+function compare(title,list){
+
+return `
+
+<h3>${title}</h3>
+
+<div style="overflow-x:auto">
+
+<table>
+
+<tr>
+
+<th>方式</th>
+
+<th>的中率</th>
+
+<th>回収率</th>
+
+<th>仮想収支</th>
+
+</tr>
+
+${list.map((s,i)=>`
+
+<tr>
+
+<td>${labels[i]}</td>
+
+<td>${pct(s.hits/s.n)}</td>
+
+<td>${pct(s.returns/s.cost)}</td>
+
+<td>${yen(s.returns-s.cost)}</td>
+
+</tr>
+
+`).join('')}
+
+</table>
+
+</div>
+
+`;
+
+}
+
+E('v17test').onclick=async function(){
+
+this.disabled=true;
+
+E('v17testout').innerHTML='';
+
+try{
+
+const rows=readData();
+
+const min=Number(
+
+E('v17minimum').value
+
+);
+
+if(rows.length<=min)
+
+throw new Error('学習データ不足');
+
+const counts=new Map();
+
+const grade=x=>
+
+String(x??'').trim().toUpperCase();
+
+function add(k,w){
+
+const v=counts.get(k)||[0,0];
+
+v[0]++;
+
+v[1]+=w;
+
+counts.set(k,v);
+
+}
+
+function estimate(k,prior,w){
+
+const [n,wins]=counts.get(k)||[0,0];
+
+return (wins+prior*w)/(n+w);
+
+}
+
+function train(r){
+
+for(const b of r.b){
+
+const n=b[0];
+
+const win=b[1]===1?1:0;
+
+add(`boat:${n}`,win);
+
+if(b[3]!=null)
+
+add(`grade:${n}:${grade(b[3])}`,win);
+
+if(b[2]!=null)
+
+add(`player:${n}:${b[2]}`,win);
+
+}
+
+}
+
+function predict(r){
+
+const boats=r.b.map(b=>{
+
+const n=b[0];
+
+const base=estimate(
+
+`boat:${n}`,1/6,20
+
+);
+
+const g=estimate(
+
+`grade:${n}:${grade(b[3])}`,
+
+base,30
+
+);
+
+const p=estimate(
+
+`player:${n}:${b[2]}`,g,40
+
+);
+
+return {
+
+n,
+
+p:Math.max(.001,.8*g+.2*p)
+
+};
+
+});
+
+const total=boats.reduce(
+
+(s,b)=>s+b.p,0
+
+);
+
+boats.forEach(b=>b.p/=total);
+
+const combinations=[];
+
+for(const a of boats)
+
+for(const b of boats)
+
+for(const c of boats){
+
+if(new Set([a.n,b.n,c.n]).size!==3)
+
+continue;
+
+combinations.push({
+
+name:`${a.n}-${b.n}-${c.n}`,
+
+p:a.p*
+
+b.p/(1-a.p)*
+
+c.p/(1-a.p-b.p)
+
+});
+
+}
+
+return combinations.sort(
+
+(a,b)=>b.p-a.p
+
+);
+
+}
+
+const all=labels.map(()=>stats());
+
+const months=new Map();
+
+const fixed=[
+
+'1-2-3','1-2-4',
+
+'1-3-2','1-3-4'
+
+];
+
+let trained=0;
+
+let tested=0;
+
+let index=0;
+
+let start='';
+
+let end='';
+
+while(index<rows.length){
+
+const date=rows[index].d;
+
+let next=index;
+
+while(next<rows.length&&
+
+rows[next].d===date)
+
+next++;
+
+const today=rows.slice(index,next);
+
+if(trained>=min){
+
+for(const r of today){
+
+const combinations=predict(r);
+
+const actual=r.b.slice()
+
+.sort((a,b)=>a[1]-b[1])
+
+.slice(0,3)
+
+.map(b=>b[0]).join('-');
+
+const month=date.slice(0,6);
+
+if(!months.has(month))
+
+months.set(
+
+month,labels.map(()=>stats())
+
+);
+
+const m=months.get(month);
+
+const picks=[
+
+combinations.slice(0,1).map(x=>x.name),
+
+combinations.slice(0,3).map(x=>x.name),
+
+combinations.slice(0,5).map(x=>x.name),
+
+fixed
+
+];
+
+picks.forEach((list,i)=>{
+
+const p=combinations.filter(
+
+x=>list.includes(x.name)
+
+).reduce((s,x)=>s+x.p,0);
+
+update(all[i],list,actual,r.p,p);
+
+update(m[i],list,actual,r.p,p);
+
+});
+
+tested++;
+
+if(!start)start=date;
+
+end=date;
+
+}
+
+}
+
+for(const r of today){
+
+train(r);
+
+trained++;
+
+}
+
+index=next;
+
+E('v17teststatus').textContent=
+
+`検証中：${index}/${rows.length}R`;
+
+await new Promise(
+
+resolve=>setTimeout(resolve,0)
+
+);
+
+}
+
+if(!tested)
+
+throw new Error('検証対象なし');
+
+E('v17testout').innerHTML=`
+
+<h3>検証完了</h3>
+
+<table>
+
+<tr><td>保存有効データ</td>
+
+<td>${rows.length}R</td></tr>
+
+<tr><td>検証対象</td>
+
+<td>${tested}R</td></tr>
+
+<tr><td>検証期間</td>
+
+<td>${start}〜${end}</td></tr>
+
+</table>
+
+${compare('予測方式別比較',all)}
+
+<h3>詳細成績</h3>
+
+${all.map((s,i)=>`
+
+<details>
+
+<summary>${labels[i]}</summary>
+
+<table>
+
+<tr><td>的中回数</td>
+
+<td>${s.hits}回</td></tr>
+
+<tr><td>平均推定確率</td>
+
+<td>${pct(s.expected/s.n)}</td></tr>
+
+<tr><td>実測的中率</td>
+
+<td>${pct(s.hits/s.n)}</td></tr>
+
+<tr><td>仮想購入額</td>
+
+<td>${yen(s.cost)}</td></tr>
+
+<tr><td>払戻額</td>
+
+<td>${yen(s.returns)}</td></tr>
+
+<tr><td>実測回収率</td>
+
+<td>${pct(s.returns/s.cost)}</td></tr>
+
+<tr><td>最大連続不的中</td>
+
+<td>${s.maxMiss}回</td></tr>
+
+<tr><td>確率誤差 Brier</td>
+
+<td>${(s.brier/s.n).toFixed(4)}</td></tr>
+
+</table>
+
+</details>
+
+`).join('')}
+
+<h3>月別成績</h3>
+
+${[...months].map(([month,s])=>
+
+compare(month.slice(0,4)+'年'+
+
+month.slice(4,6)+'月',s)
+
+).join('')}
+
+<p>
+
+対象日より前のデータのみ学習。
+
+同日の結果は予測後に学習します。
+
+1点100円の仮想検証です。
+
+</p>
+
+<p>
+
+オッズによる事前選別、
+
+展示・気象・モーターは未反映。
+
+連続不的中は日付・会場番号・
+
+レース番号順の集計です。
+
+</p>
+
+<p>
+
+モデル開発と同じ期間を含むため、
+
+完全な独立検証ではありません。
+
+</p>
+
+`;
+
+E('v17teststatus').textContent=
+
+`検証完了：${tested}レース`;
+
+}catch(e){
+
+E('v17teststatus').textContent=
+
+'検証エラー：'+e.message;
+
+}finally{
+
+this.disabled=false;
+
+}
+
+};
+
+const previous=analyse;
+
+analyse=async function(){
+
+if(reviewKey!==raceKey())
+
+resetReview();
+
+return await previous();
+
+};
+
+const heading=document.querySelector('h1 small');
+
+if(heading)
+
+heading.textContent='V17';
+
+document.title='AI RACE V17';
+
+})();
+
+</script>
