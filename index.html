@@ -766,3 +766,236 @@ document.querySelector('h1 small').textContent='V4';
 document.title='AI RACE V4';
 
 </script>
+<script>
+
+analyse = async function(){
+
+ const mode=sport;
+
+ const day=$('date').value.replace(/-/g,'');
+
+ const stadium=venues.boat.split(' ').indexOf($('venue').value)+1;
+
+ const race=parseInt($('race').value);
+
+ document.getElementById('extraV4')?.remove();
+
+ await originalAnalyse();
+
+ if(mode!=='boat'||sport!==mode)return;
+
+ if($('date').value.replace(/-/g,'')!==day)return;
+
+ if(venues.boat.split(' ').indexOf($('venue').value)+1!==stadium)return;
+
+ if(parseInt($('race').value)!==race)return;
+
+ const box=document.createElement('div');
+
+ box.id='extraV4';
+
+ box.className='card';
+
+ box.textContent='直前情報・結果取得中...';
+
+ $('details').parentElement.after(box);
+
+ const base='https://boatraceopenapi.github.io/';
+
+ const path=day.slice(0,4)+'/'+day+'.json';
+
+ async function get(path){
+
+  try{
+
+   const res=await fetch(base+path,{cache:'no-store'});
+
+   if(!res.ok)return null;
+
+   return await res.json();
+
+  }catch(e){return null}
+
+ }
+
+ const [pd,rd]=await Promise.all([
+
+ get('previews/v2/'+path),
+
+ get('results/v3/'+path)
+
+ ]);
+
+ if(!box.isConnected)return;
+
+ const p=pd?.previews?.find(x=>
+
+ Number(x.race_stadium_number)===stadium&&
+
+ Number(x.race_number)===race);
+
+ const r=rd?.results?.find(x=>
+
+ Number(x.stadium_number)===stadium&&
+
+ Number(x.number)===race);
+
+ const val=x=>esc(x??'未取得');
+
+ function st(x){
+
+  if(x==null)return '未取得';
+
+  if(Number(x)<0)return 'F'+Math.abs(Number(x)).toFixed(2);
+
+  return Number(x).toFixed(2);
+
+ }
+
+ function payout(items){
+
+  if(!Array.isArray(items)||!items.length)
+
+   return '<p>結果未取得</p>';
+
+  return items.map(x=>'<p>'+val(x.combination)+'：'+val(x.amount==null?null:Number(x.amount).toLocaleString())+'円</p>').join('');
+
+ }
+
+ box.innerHTML=`
+
+ <h3>直前情報・水面条件</h3>
+
+ <p class="${p?'good':'warn'}">${p?'展示データ取得成功':'展示データ未取得'}</p>
+
+ <table>
+
+ <tr><td>天候コード</td><td>${val(p?.race_weather_number)}</td></tr>
+
+ <tr><td>風向コード</td><td>${val(p?.race_wind_direction_number)}</td></tr>
+
+ <tr><td>風速</td><td>${val(p?.race_wind)} m</td></tr>
+
+ <tr><td>波高</td><td>${val(p?.race_wave)} cm</td></tr>
+
+ <tr><td>気温</td><td>${val(p?.race_temperature)} ℃</td></tr>
+
+ <tr><td>水温</td><td>${val(p?.race_water_temperature)} ℃</td></tr>
+
+ </table>
+
+ <h3>展示成績</h3>
+
+ <div class="scroll">
+
+ <table>
+
+ <tr>
+
+ <th>艇</th><th>進入</th><th>展示ST</th><th>タイム</th><th>チルト</th>
+
+ </tr>
+
+ ${[1,2,3,4,5,6].map(n=>{
+
+ const x=p?.boats?.find(b=>Number(b.racer_boat_number)===n);
+
+ return `<tr>
+
+ <td><span class="num" style="background:${colors[n-1]};color:${[1,5].includes(n)?'#111':'white'}">${n}</span></td>
+
+ <td>${val(x?.racer_course_number)}</td>
+
+ <td>${st(x?.racer_start_timing)}</td>
+
+ <td>${val(x?.racer_exhibition_time)}</td>
+
+ <td>${val(x?.racer_tilt_adjustment)}</td>
+
+ </tr>`;
+
+ }).join('')}
+
+ </table>
+
+ </div>
+
+ <details>
+
+ <summary>確定レース結果・払戻金</summary>
+
+ <p class="${r?'good':'warn'}">${r?'結果取得成功':'結果未取得'}</p>
+
+ <table>
+
+ <tr><th>着順</th><th>艇番</th><th>選手名</th></tr>
+
+ ${(r?.boats||[]).slice().sort((a,b)=>
+
+ Number(a.racer_place_number)-Number(b.racer_place_number)
+
+ ).map(x=>`<tr>
+
+ <td>${val(x.racer_place_number)}</td>
+
+ <td>${val(x.racer_boat_number)}</td>
+
+ <td>${val(x.racer_name)}</td>
+
+ </tr>`).join('')}
+
+ </table>
+
+ <h4>3連単</h4>
+
+ ${payout(r?.payouts?.trifecta)}
+
+ <h4>3連複</h4>
+
+ ${payout(r?.payouts?.trio)}
+
+ <h4>2連単</h4>
+
+ ${payout(r?.payouts?.exacta)}
+
+ <h4>2連複</h4>
+
+ ${payout(r?.payouts?.quinella)}
+
+ <p>返還情報：未検証</p>
+
+ </details>
+
+ <p>出典：Boatrace Open API</p>
+
+ <p class="warn">非公式データのため更新の遅れに注意してください。</p>`;
+
+ const rows=$('factors').querySelectorAll('tr');
+
+ rows.forEach(row=>{
+
+ const name=row.cells[0]?.textContent;
+
+ if(p&&(
+
+ (name==='展示タイム'&&p.boats?.some(b=>b.racer_exhibition_time!=null))||
+
+ (name==='風速・波高'&&p.race_wind!=null&&p.race_wave!=null)
+
+ )){
+
+ row.cells[1].textContent='取得済み';
+
+ row.cells[1].className='good';
+
+ }
+
+ });
+
+};
+
+document.querySelector('h1 small').textContent='V4.1';
+
+document.title='AI RACE V4.1';
+
+</script>
