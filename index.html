@@ -1,4 +1,4 @@
- 
+
 
 <!DOCTYPE html>
 
@@ -12,7 +12,7 @@
 
 <meta name="apple-mobile-web-app-capable" content="yes">
 
-<title>AI RACE V2</title>
+<title>AI RACE V3</title>
 
 <style>
 
@@ -30,6 +30,8 @@ button,input,select,textarea{font-size:16px;border:0;border-radius:10px;padding:
 
 button{width:100%;background:#65dfba;color:#10251e;font-weight:bold;margin:6px 0}
 
+button:disabled{opacity:.5}
+
 input,select,textarea{width:100%;background:#304154;color:white;margin:6px 0}
 
 input[type=checkbox]{width:24px;height:24px;accent-color:#65dfba}
@@ -40,9 +42,9 @@ input[type=checkbox]{width:24px;height:24px;accent-color:#65dfba}
 
 .tabs .active{background:#65dfba;color:#10251e}
 
-table{width:100%;border-collapse:collapse;text-align:center;font-size:14px}
+table{width:100%;border-collapse:collapse;text-align:center;font-size:13px}
 
-td,th{padding:9px 3px;border-bottom:1px solid #405063}
+td,th{padding:10px 4px;border-bottom:1px solid #405063}
 
 details{background:#29394b;border-radius:12px;padding:14px;margin:10px 0}
 
@@ -56,7 +58,13 @@ summary{font-weight:bold;cursor:pointer}
 
 .warn{color:#ffd08a}
 
+.good{color:#65dfba}
+
 a{color:#65dfba}
+
+.scroll{overflow-x:auto}
+
+.num{display:inline-block;border-radius:5px;padding:6px 10px;font-weight:bold}
 
 </style>
 
@@ -64,7 +72,7 @@ a{color:#65dfba}
 
 <body>
 
-<h1>AI RACE <small>V2</small></h1>
+<h1>AI RACE <small>V3</small></h1>
 
 <p>競馬・競艇 データ分析</p>
 
@@ -78,9 +86,13 @@ a{color:#65dfba}
 
 </div>
 
+<label>開催日</label>
+
+<input type="date" id="date">
+
 <label>レース名を直接入力</label>
 
-<input id="direct" placeholder="大村10R、東京11Rなど">
+<input id="direct" placeholder="大村10R、東京11R">
 
 <button onclick="directSearch()">レースを選択</button>
 
@@ -92,7 +104,7 @@ a{color:#65dfba}
 
 <select id="race"></select>
 
-<button onclick="analyse()">分析画面を表示</button>
+<button id="load" onclick="analyse()">レースデータ取得</button>
 
 </div>
 
@@ -102,21 +114,45 @@ a{color:#65dfba}
 
 <h2 id="raceTitle"></h2>
 
-<p class="warn">データ未接続・自動AI予測は未実装</p>
+<p id="status" role="status"></p>
 
-<p><a id="official" target="_blank" rel="noopener">公式レース情報を確認</a></p>
+<p id="deadline"></p>
 
-<h3>分析データ</h3>
-
-<table id="factors"></table>
+<a id="official" target="_blank" rel="noopener">公式レース情報</a>
 
 </div>
 
 <div class="card">
 
-<h3>選手・競走馬の成績入力</h3>
+<h3>出走選手・成績</h3>
 
-<textarea id="notes" rows="6" placeholder="選手名、級別、勝率、展示、騎手、馬場など"></textarea>
+<div class="scroll">
+
+<table id="racers"></table>
+
+</div>
+
+<p id="source"></p>
+
+</div>
+
+<div class="card">
+
+<h3>選手別詳細データ</h3>
+
+<div id="details"></div>
+
+</div>
+
+<div class="card">
+
+<h3>分析状況</h3>
+
+<table id="factors"></table>
+
+<p class="warn">AI予測モデルは未接続です。</p>
+
+<textarea id="notes" rows="4" placeholder="分析メモ"></textarea>
 
 </div>
 
@@ -124,7 +160,7 @@ a{color:#65dfba}
 
 <h3>着順別確率</h3>
 
-<p>検証済みの予測値を手動入力してください。</p>
+<p>検証済みの確率を手動入力できます。</p>
 
 <label>出走数</label>
 
@@ -136,7 +172,7 @@ a{color:#65dfba}
 
 <div class="card">
 
-<h3>フォーメーション・仮想検証</h3>
+<h3>仮想収支検証</h3>
 
 <select id="method" onchange="calculate()">
 
@@ -148,7 +184,7 @@ a{color:#65dfba}
 
 <details>
 
-<summary>チェック表を開く</summary>
+<summary>チェック表を表示</summary>
 
 <table id="checks"></table>
 
@@ -162,15 +198,15 @@ a{color:#65dfba}
 
 </div>
 
-<label>1点の仮想金額</label>
+<label>1点あたりの仮想金額</label>
 
 <input id="stake" type="number" min="100" step="100" value="100" oninput="calculate()">
 
-<label>実際の結果から計算した仮想払戻額</label>
+<label>仮想払戻額</label>
 
 <input id="payout" type="number" min="0" value="0">
 
-<button onclick="save()">仮想成績を記録</button>
+<button onclick="save()">仮想成績を保存</button>
 
 </div>
 
@@ -214,15 +250,33 @@ horse:'札幌 函館 福島 新潟 東京 中山 中京 京都 阪神 小倉'
 
 };
 
-let sport='boat',points=0;
+const colors=['#eeeeee','#333333','#df4444','#3478cf','#e4c22b','#26965b'];
+
+let sport='boat',points=0,requestId=0,currentRace=null;
 
 let records=[];
 
 try{records=JSON.parse(localStorage.getItem('raceRecords')||'[]')}catch(e){}
 
+$('date').value=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'});
+
+$('race').innerHTML=Array.from({length:12},(_,i)=>`<option>${i+1}R</option>`).join('');
+
+function esc(v){
+
+return String(v??'―').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+}
+
 function change(s){
 
+requestId++;
+
+currentRace=null;
+
 sport=s;
+
+$('load').disabled=false;
 
 $('boat').className=s==='boat'?'active':'';
 
@@ -233,8 +287,6 @@ $('venue').innerHTML=venues[s].split(' ').map(v=>`<option>${v}</option>`).join('
 $('result').hidden=true;
 
 }
-
-$('race').innerHTML=Array.from({length:12},(_,i)=>`<option>${i+1}R</option>`).join('');
 
 function directSearch(){
 
@@ -258,31 +310,181 @@ analyse();
 
 }
 
-function analyse(){
+async function analyse(){
+
+const date=$('date').value;
+
+if(!date){alert('開催日を選択してください');return}
+
+const id=++requestId;
+
+const mode=sport;
+
+const venue=$('venue').value;
+
+const race=parseInt($('race').value);
+
+const day=date.replace(/-/g,'');
+
+const stadium=venues.boat.split(' ').indexOf(venue)+1;
+
+currentRace={date,race:venue+race+'R'};
 
 $('result').hidden=false;
 
-$('raceTitle').textContent=$('venue').value+$('race').value;
+$('raceTitle').textContent=currentRace.race;
 
-$('official').href=sport==='boat'?'https://www.boatrace.jp/':'https://www.jra.go.jp/';
+$('status').textContent='データ取得中...';
 
-let f=sport==='boat'?
+$('deadline').textContent=date;
 
-['選手成績','級別','コース適性','モーター','展示タイム','平均ST','水質・潮位','風速・波高','オッズ']:
+$('racers').innerHTML='';
 
-['競走馬成績','騎手','距離適性','枠順','馬場状態','調教','馬体重','展開','オッズ'];
+$('details').innerHTML='';
 
-$('factors').innerHTML=f.map(x=>`<tr><td>${x}</td><td>未取得</td></tr>`).join('');
-
-$('field').innerHTML=sport==='boat'?'<option>6</option>':Array.from({length:17},(_,i)=>`<option>${i+2}</option>`).join('');
-
-$('field').value=sport==='boat'?'6':'18';
+$('source').textContent='';
 
 $('notes').value='';
 
 $('payout').value=0;
 
+$('field').innerHTML=mode==='boat'?'<option>6</option>':Array.from({length:16},(_,i)=>`<option>${i+3}</option>`).join('');
+
+$('field').value=mode==='boat'?'6':'18';
+
 buildTables();
+
+setFactors(false);
+
+$('official').href=mode==='boat'?
+
+`https://www.boatrace.jp/owpc/pc/race/racelist?rno=${race}&jcd=${String(stadium).padStart(2,'0')}&hd=${day}`:
+
+'https://www.jra.go.jp/';
+
+if(mode==='horse'){
+
+$('status').textContent='競馬データは未接続です。';
+
+return;
+
+}
+
+$('load').disabled=true;
+
+try{
+
+const url=`https://boatraceopenapi.github.io/api/v1/${day.slice(0,4)}/${day}.json`;
+
+const res=await fetch(url,{cache:'no-store'});
+
+if(!res.ok)throw new Error('HTTP '+res.status);
+
+const data=await res.json();
+
+if(id!==requestId)return;
+
+const r=data.programs?.stadiums?.[stadium]?.races?.[race];
+
+if(!r||!r.racers)throw new Error('指定日のレース情報がありません');
+
+$('status').textContent='出走表データ取得成功';
+
+$('status').className='good';
+
+$('deadline').textContent='締切：'+(r.closed_at||'未取得');
+
+const racers=Object.values(r.racers).sort((a,b)=>a.entry_number-b.entry_number);
+
+$('racers').innerHTML='<tr><th>艇</th><th>選手</th><th>級</th><th>全国勝率</th><th>平均ST</th><th>機力2連率</th></tr>'+
+
+racers.map(x=>`<tr>
+
+<td><span class="num" style="background:${colors[x.entry_number-1]||'#555'};color:${[1,5].includes(x.entry_number)?'#111':'white'}">${esc(x.entry_number)}</span></td>
+
+<td>${esc(x.name)}</td>
+
+<td>${esc(x.rank_number_source)}</td>
+
+<td>${esc(x.national_win_rate)}</td>
+
+<td>${esc(x.average_start_timing)}</td>
+
+<td>${esc(x.motor_top_2_percent)}</td>
+
+</tr>`).join('');
+
+$('details').innerHTML=racers.map(x=>`
+
+<details>
+
+<summary>${esc(x.entry_number)}号艇 ${esc(x.name)}</summary>
+
+<table>
+
+<tr><td>登録番号</td><td>${esc(x.number)}</td></tr>
+
+<tr><td>級別</td><td>${esc(x.rank_number_source)}</td></tr>
+
+<tr><td>体重</td><td>${esc(x.weight)} kg</td></tr>
+
+<tr><td>全国勝率</td><td>${esc(x.national_win_rate)}</td></tr>
+
+<tr><td>全国2連対率</td><td>${esc(x.national_top_2_percent)}%</td></tr>
+
+<tr><td>全国3連対率</td><td>${esc(x.national_top_3_percent)}%</td></tr>
+
+<tr><td>当地勝率</td><td>${esc(x.local_win_rate)}</td></tr>
+
+<tr><td>当地2連対率</td><td>${esc(x.local_top_2_percent)}%</td></tr>
+
+<tr><td>当地3連対率</td><td>${esc(x.local_top_3_percent)}%</td></tr>
+
+<tr><td>平均ST</td><td>${esc(x.average_start_timing)}</td></tr>
+
+<tr><td>F回数</td><td>${esc(x.flying_count)}</td></tr>
+
+<tr><td>モーター番号</td><td>${esc(x.motor_number)}</td></tr>
+
+<tr><td>モーター2連率</td><td>${esc(x.motor_top_2_percent)}%</td></tr>
+
+<tr><td>モーター3連率</td><td>${esc(x.motor_top_3_percent)}%</td></tr>
+
+</table>
+
+</details>`).join('');
+
+$('source').textContent='出典：Boatrace Open API（非公式）／取得時刻：'+new Date().toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo'});
+
+setFactors(true);
+
+}catch(e){
+
+if(id===requestId){
+
+$('status').textContent='取得失敗：'+e.message;
+
+$('status').className='warn';
+
+}
+
+}finally{
+
+if(id===requestId)$('load').disabled=false;
+
+}
+
+}
+
+function setFactors(ok){
+
+let f=sport==='boat'?
+
+['選手成績','級別','全国・当地勝率','モーター','平均ST','フライング歴','コース別着順率','展示タイム','水質・潮位','風速・波高','オッズ']:
+
+['競走馬成績','騎手','距離適性','枠順','馬場状態','調教','馬体重','展開','オッズ'];
+
+$('factors').innerHTML=f.map((x,i)=>`<tr><td>${x}</td><td class="${ok&&i<6?'good':'warn'}">${ok&&i<6?'取得済み':'未取得'}</td></tr>`).join('');
 
 }
 
@@ -290,9 +492,13 @@ function buildTables(){
 
 let n=Number($('field').value);
 
-$('rates').innerHTML='<tr><th>番号</th><th>1着%</th><th>2着%</th><th>3着%</th></tr>'+Array.from({length:n},(_,i)=>`<tr><td>${i+1}</td>${Array.from({length:3},()=>'<td><input type="number" min="0" max="100" placeholder="―"></td>').join('')}</tr>`).join('');
+$('rates').innerHTML='<tr><th>番号</th><th>1着%</th><th>2着%</th><th>3着%</th></tr>'+
 
-$('checks').innerHTML='<tr><th>番号</th><th>1列目</th><th>2列目</th><th>3列目</th></tr>'+Array.from({length:n},(_,i)=>`<tr><td>${i+1}</td>${[0,1,2].map(j=>`<td><input type="checkbox" data-num="${i+1}" data-col="${j}" onchange="calculate()"></td>`).join('')}</tr>`).join('');
+Array.from({length:n},(_,i)=>`<tr><td>${i+1}</td>${Array.from({length:3},()=>'<td><input type="number" min="0" max="100" placeholder="―"></td>').join('')}</tr>`).join('');
+
+$('checks').innerHTML='<tr><th>番号</th><th>1列目</th><th>2列目</th><th>3列目</th></tr>'+
+
+Array.from({length:n},(_,i)=>`<tr><td>${i+1}</td>${[0,1,2].map(j=>`<td><input type="checkbox" data-num="${i+1}" data-col="${j}" onchange="calculate()"></td>`).join('')}</tr>`).join('');
 
 calculate();
 
@@ -326,23 +532,29 @@ $('cost').textContent=(points*Number($('stake').value||0)).toLocaleString()+'円
 
 function save(){
 
-let stake=Number($('stake').value);
-
-let payout=Number($('payout').value);
+let stake=Number($('stake').value),payout=Number($('payout').value);
 
 let cost=points*stake;
 
-if(!points||!Number.isFinite(cost)||stake<100||stake%100!==0||!Number.isFinite(payout)||payout<0){
+if(!currentRace||!points||!Number.isFinite(cost)||stake<100||stake%100!==0||!Number.isFinite(payout)||payout<0){
 
 alert('チェック表と金額を確認してください');return;
 
 }
 
-let date=new Date().toLocaleDateString('ja-JP');
+records.push({...currentRace,cost,payout,notes:$('notes').value});
 
-records.push({race:$('raceTitle').textContent,date,cost,payout,notes:$('notes').value});
+try{
 
 localStorage.setItem('raceRecords',JSON.stringify(records));
+
+}catch(e){
+
+records.pop();
+
+alert('保存できませんでした');return;
+
+}
 
 update();
 
