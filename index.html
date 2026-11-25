@@ -8,31 +8,31 @@
 
 <meta charset="UTF-8">
 
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 
 <meta name="apple-mobile-web-app-capable" content="yes">
 
-<meta name="theme-color" content="#101923">
-
-<title>AI RACE</title>
+<title>AI RACE V2</title>
 
 <style>
 
 *{box-sizing:border-box}
 
-body{background:#101923;color:#fff;font-family:-apple-system,sans-serif;margin:0;padding:18px}
+body{margin:0;padding:18px;background:#101923;color:white;font-family:-apple-system,sans-serif}
 
 h1{color:#65dfba;margin-bottom:4px}
 
-p{color:#aab9cb;font-size:14px}
+p,small{color:#aab9cb}
 
-.card{background:#1e2c3b;border-radius:16px;padding:16px;margin:15px 0}
+.card{background:#1e2c3b;border-radius:16px;padding:16px;margin:16px 0}
 
-button,select,input{font-size:16px;border:0;border-radius:10px;padding:12px}
+button,input,select,textarea{font-size:16px;border:0;border-radius:10px;padding:12px}
 
-button{background:#65dfba;color:#10251e;font-weight:bold;width:100%;margin:5px 0}
+button{width:100%;background:#65dfba;color:#10251e;font-weight:bold;margin:6px 0}
 
-select,input{width:100%;background:#304154;color:white;margin:6px 0}
+input,select,textarea{width:100%;background:#304154;color:white;margin:6px 0}
+
+input[type=checkbox]{width:24px;height:24px;accent-color:#65dfba}
 
 .tabs{display:flex;gap:10px}
 
@@ -42,21 +42,21 @@ select,input{width:100%;background:#304154;color:white;margin:6px 0}
 
 table{width:100%;border-collapse:collapse;text-align:center;font-size:14px}
 
-td,th{padding:10px 3px;border-bottom:1px solid #405063}
+td,th{padding:9px 3px;border-bottom:1px solid #405063}
 
 details{background:#29394b;border-radius:12px;padding:14px;margin:10px 0}
 
-summary{cursor:pointer;font-weight:bold}
+summary{font-weight:bold;cursor:pointer}
 
 .stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 
 .stat{background:#29394b;padding:14px;border-radius:12px}
 
-.stat strong{display:block;font-size:25px;margin-top:8px}
+.stat strong{display:block;font-size:24px;margin-top:8px}
 
 .warn{color:#ffd08a}
 
-small{color:#aab9cb}
+a{color:#65dfba}
 
 </style>
 
@@ -64,7 +64,7 @@ small{color:#aab9cb}
 
 <body>
 
-<h1>AI RACE</h1>
+<h1>AI RACE <small>V2</small></h1>
 
 <p>競馬・競艇 データ分析</p>
 
@@ -72,17 +72,23 @@ small{color:#aab9cb}
 
 <div class="tabs">
 
-<button id="boat" class="active" onclick="change('boat')">競艇</button>
+<button id="boat" onclick="change('boat')">競艇</button>
 
 <button id="horse" onclick="change('horse')">競馬</button>
 
 </div>
 
-<p>開催場</p>
+<label>レース名を直接入力</label>
+
+<input id="direct" placeholder="大村10R、東京11Rなど">
+
+<button onclick="directSearch()">レースを選択</button>
+
+<label>開催場</label>
 
 <select id="venue"></select>
 
-<p>レース番号</p>
+<label>レース番号</label>
 
 <select id="race"></select>
 
@@ -96,9 +102,11 @@ small{color:#aab9cb}
 
 <h2 id="raceTitle"></h2>
 
-<p class="warn">サンプルデータ・実際の予想ではありません</p>
+<p class="warn">データ未接続・自動AI予測は未実装</p>
 
-<h3>分析項目</h3>
+<p><a id="official" target="_blank" rel="noopener">公式レース情報を確認</a></p>
+
+<h3>分析データ</h3>
 
 <table id="factors"></table>
 
@@ -106,51 +114,59 @@ small{color:#aab9cb}
 
 <div class="card">
 
-<h3>着順別成績</h3>
+<h3>選手・競走馬の成績入力</h3>
 
-<table id="rates"></table>
-
-<p>実際の確率はデータ接続後に算出します。</p>
+<textarea id="notes" rows="6" placeholder="選手名、級別、勝率、展示、騎手、馬場など"></textarea>
 
 </div>
 
 <div class="card">
 
-<h3>仮想購入・収支計算</h3>
+<h3>着順別確率</h3>
 
-<label>購入方式</label>
+<p>検証済みの予測値を手動入力してください。</p>
 
-<select id="method">
+<label>出走数</label>
 
-<option>3連単フォーメーション</option>
+<select id="field" onchange="buildTables()"></select>
 
-<option>3連複フォーメーション</option>
+<table id="rates"></table>
 
-<option>BOX</option>
+</div>
 
-<option>その他</option>
+<div class="card">
+
+<h3>フォーメーション・仮想検証</h3>
+
+<select id="method" onchange="calculate()">
+
+<option value="triple">3連単</option>
+
+<option value="trio">3連複</option>
 
 </select>
 
 <details>
 
-<summary>チェック表を表示</summary>
+<summary>チェック表を開く</summary>
 
 <table id="checks"></table>
 
-<small>入力確認用のチェック表です。</small>
-
 </details>
 
-<label>購入点数</label>
+<div class="stats">
 
-<input id="points" type="number" min="1" value="1">
+<div class="stat">点数<strong id="points">0</strong></div>
 
-<label>1点の金額（円）</label>
+<div class="stat">仮想購入額<strong id="cost">0円</strong></div>
 
-<input id="stake" type="number" min="100" value="100">
+</div>
 
-<label>払戻総額（円）</label>
+<label>1点の仮想金額</label>
+
+<input id="stake" type="number" min="100" step="100" value="100" oninput="calculate()">
+
+<label>実際の結果から計算した仮想払戻額</label>
 
 <input id="payout" type="number" min="0" value="0">
 
@@ -188,7 +204,7 @@ small{color:#aab9cb}
 
 <script>
 
-let sport='boat';
+const $=id=>document.getElementById(id);
 
 const venues={
 
@@ -198,9 +214,11 @@ horse:'札幌 函館 福島 新潟 東京 中山 中京 京都 阪神 小倉'
 
 };
 
-const $=id=>document.getElementById(id);
+let sport='boat',points=0;
 
-let records=JSON.parse(localStorage.getItem('raceRecords')||'[]');
+let records=[];
+
+try{records=JSON.parse(localStorage.getItem('raceRecords')||'[]')}catch(e){}
 
 function change(s){
 
@@ -218,49 +236,125 @@ $('result').hidden=true;
 
 $('race').innerHTML=Array.from({length:12},(_,i)=>`<option>${i+1}R</option>`).join('');
 
+function directSearch(){
+
+let t=$('direct').value.normalize('NFKC').replace(/\s/g,'');
+
+let m=t.match(/^(.+?)([1-9]|1[0-2])R$/i);
+
+if(!m){alert('大村10Rのように入力してください');return}
+
+let s=Object.keys(venues).find(k=>venues[k].split(' ').includes(m[1]));
+
+if(!s){alert('開催場を確認してください');return}
+
+change(s);
+
+$('venue').value=m[1];
+
+$('race').value=m[2]+'R';
+
+analyse();
+
+}
+
 function analyse(){
 
 $('result').hidden=false;
 
 $('raceTitle').textContent=$('venue').value+$('race').value;
 
-let factors=sport==='boat'?
+$('official').href=sport==='boat'?'https://www.boatrace.jp/':'https://www.jra.go.jp/';
 
-['選手別成績','級別','コース別成績','モーター','展示タイム','平均ST','水質・潮位','風速・波高','オッズ']:
+let f=sport==='boat'?
 
-['競走馬成績','騎手成績','距離適性','枠順','馬場状態','調教','馬体重','展開','オッズ'];
+['選手成績','級別','コース適性','モーター','展示タイム','平均ST','水質・潮位','風速・波高','オッズ']:
 
-$('factors').innerHTML=factors.map(f=>`<tr><td>${f}</td><td>未取得</td></tr>`).join('');
+['競走馬成績','騎手','距離適性','枠順','馬場状態','調教','馬体重','展開','オッズ'];
 
-let n=sport==='boat'?6:18;
+$('factors').innerHTML=f.map(x=>`<tr><td>${x}</td><td>未取得</td></tr>`).join('');
 
-$('rates').innerHTML='<tr><th>番号</th><th>1着</th><th>2着</th><th>3着</th></tr>'+Array.from({length:n},(_,i)=>`<tr><td>${i+1}</td><td>―</td><td>―</td><td>―</td></tr>`).join('');
+$('field').innerHTML=sport==='boat'?'<option>6</option>':Array.from({length:17},(_,i)=>`<option>${i+2}</option>`).join('');
 
-$('checks').innerHTML='<tr><th>番号</th><th>1着</th><th>2着</th><th>3着</th></tr>'+Array.from({length:n},(_,i)=>`<tr><td>${i+1}</td><td><input type="checkbox"></td><td><input type="checkbox"></td><td><input type="checkbox"></td></tr>`).join('');
+$('field').value=sport==='boat'?'6':'18';
+
+$('notes').value='';
+
+$('payout').value=0;
+
+buildTables();
+
+}
+
+function buildTables(){
+
+let n=Number($('field').value);
+
+$('rates').innerHTML='<tr><th>番号</th><th>1着%</th><th>2着%</th><th>3着%</th></tr>'+Array.from({length:n},(_,i)=>`<tr><td>${i+1}</td>${Array.from({length:3},()=>'<td><input type="number" min="0" max="100" placeholder="―"></td>').join('')}</tr>`).join('');
+
+$('checks').innerHTML='<tr><th>番号</th><th>1列目</th><th>2列目</th><th>3列目</th></tr>'+Array.from({length:n},(_,i)=>`<tr><td>${i+1}</td>${[0,1,2].map(j=>`<td><input type="checkbox" data-num="${i+1}" data-col="${j}" onchange="calculate()"></td>`).join('')}</tr>`).join('');
+
+calculate();
+
+}
+
+function calculate(){
+
+let c=[0,1,2].map(j=>Array.from(document.querySelectorAll(`#checks input[data-col="${j}"]:checked`)).map(e=>Number(e.dataset.num)));
+
+let set=new Set();
+
+for(let a of c[0])for(let b of c[1])for(let d of c[2]){
+
+if(new Set([a,b,d]).size!==3)continue;
+
+let arr=[a,b,d];
+
+if($('method').value==='trio')arr.sort((x,y)=>x-y);
+
+set.add(arr.join('-'));
+
+}
+
+points=set.size;
+
+$('points').textContent=points+'点';
+
+$('cost').textContent=(points*Number($('stake').value||0)).toLocaleString()+'円';
 
 }
 
 function save(){
 
-let cost=Number($('points').value)*Number($('stake').value);
+let stake=Number($('stake').value);
 
 let payout=Number($('payout').value);
 
-if(!Number.isFinite(cost)||cost<=0||!Number.isFinite(payout)||payout<0)return;
+let cost=points*stake;
 
-records.push({race:$('raceTitle').textContent,cost,payout});
+if(!points||!Number.isFinite(cost)||stake<100||stake%100!==0||!Number.isFinite(payout)||payout<0){
+
+alert('チェック表と金額を確認してください');return;
+
+}
+
+let date=new Date().toLocaleDateString('ja-JP');
+
+records.push({race:$('raceTitle').textContent,date,cost,payout,notes:$('notes').value});
 
 localStorage.setItem('raceRecords',JSON.stringify(records));
 
 update();
 
+alert('仮想成績を保存しました');
+
 }
 
 function update(){
 
-let cost=records.reduce((s,r)=>s+r.cost,0);
+let cost=records.reduce((s,r)=>s+Number(r.cost),0);
 
-let pay=records.reduce((s,r)=>s+r.payout,0);
+let pay=records.reduce((s,r)=>s+Number(r.payout),0);
 
 $('count').textContent=records.length;
 
@@ -270,7 +364,17 @@ $('roi').textContent=cost?(pay/cost*100).toFixed(1)+'%':'0%';
 
 $('profit').textContent=(pay-cost).toLocaleString()+'円';
 
-$('history').textContent=records.slice().reverse().map(r=>r.race+'：'+(r.payout-r.cost).toLocaleString()+'円').join(' ／ ');
+$('history').replaceChildren();
+
+records.slice().reverse().forEach(r=>{
+
+let p=document.createElement('p');
+
+p.textContent=(r.date||'')+' '+r.race+'：'+(r.payout-r.cost).toLocaleString()+'円';
+
+$('history').appendChild(p);
+
+});
 
 }
 
