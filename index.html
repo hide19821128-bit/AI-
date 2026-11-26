@@ -6891,3 +6891,1472 @@ document.title='AI RACE V17';
 })();
 
 </script>
+
+
+<script>
+
+(()=>{
+
+const E=id=>document.getElementById(id);
+
+if(E('v19panel'))return;
+
+const anchor=E('v17plus');
+
+if(!anchor)return;
+
+const panel=document.createElement('div');
+
+panel.id='v19panel';
+
+panel.className='card';
+
+panel.innerHTML=`
+
+<h2>総合データ分析 V19</h2>
+
+<p>
+
+選手・モーター・展示・気象情報を
+
+一画面で確認します。
+
+</p>
+
+<button id="v19load">
+
+選択レースを一括分析
+
+</button>
+
+<p id="v19status"></p>
+
+<div id="v19output"></div>
+
+<h3>画像認識・オッズ確認</h3>
+
+<button id="v19image">
+
+オッズ画像を選択
+
+</button>
+
+<button id="v19ocr">
+
+高精度画像認識
+
+</button>
+
+<button id="v19review">
+
+認識結果・訂正画面へ
+
+</button>
+
+<h3>統計分析</h3>
+
+<button id="v19predict">
+
+本命・高配当・期待回収率を表示
+
+</button>
+
+<button id="v19history">
+
+過去データ・回収率検証
+
+</button>
+
+<h3>会場別・展示傾向の検証</h3>
+
+<button id="v19test">
+
+追加要素の予測精度を検証
+
+</button>
+
+<p id="v19teststatus"></p>
+
+<div id="v19testout"></div>
+
+<h3>バックアップ</h3>
+
+<button id="v19backup">
+
+過去データをバックアップ
+
+</button>
+
+`;
+
+anchor.after(panel);
+
+const venues19=[
+
+'桐生','戸田','江戸川','平和島',
+
+'多摩川','浜名湖','蒲郡','常滑',
+
+'津','三国','びわこ','住之江',
+
+'尼崎','鳴門','丸亀','児島',
+
+'宮島','徳山','下関','若松',
+
+'芦屋','福岡','唐津','大村'
+
+];
+
+const colors19=[
+
+'#eeeeee','#333333','#df4444',
+
+'#3478cf','#e4c22b','#26965b'
+
+];
+
+function day(){
+
+return E('date').value.replace(/-/g,'');
+
+}
+
+function raceKey(){
+
+return [
+
+sport,
+
+day(),
+
+E('venue').value,
+
+E('race').value
+
+].join('|');
+
+}
+
+function esc19(v){
+
+return String(v??'―')
+
+.replace(/[&<>"']/g,c=>({
+
+'&':'&amp;',
+
+'<':'&lt;',
+
+'>':'&gt;',
+
+'"':'&quot;',
+
+"'":'&#39;'
+
+}[c]));
+
+}
+
+function number(v,min,max){
+
+if(v===null||v===undefined||v==='')
+
+return null;
+
+const n=Number(v);
+
+return Number.isFinite(n)&&
+
+n>=min&&n<=max?n:null;
+
+}
+
+function display(v,d=2){
+
+return v===null||
+
+v===undefined||
+
+!Number.isFinite(Number(v))
+
+?'未取得':Number(v).toFixed(d);
+
+}
+
+function pct(v){
+
+return Number.isFinite(v)?
+
+(v*100).toFixed(2)+'%':'―';
+
+}
+
+function records(){
+
+const data=JSON.parse(
+
+localStorage.getItem('aiRaceHistoryV6')
+
+||'null'
+
+);
+
+if(!Array.isArray(data?.records))
+
+return [];
+
+const unique=new Map();
+
+for(const r of data.records){
+
+if(!/^\d{8}$/.test(String(r.d)))
+
+continue;
+
+if(!Array.isArray(r.b)||r.b.length!==6)
+
+continue;
+
+const b=r.b.map(x=>[
+
+Number(x[0]),
+
+Number(x[1]),
+
+x[2],
+
+x[3],
+
+number(x[4],5,9),
+
+number(x[5],1,6)
+
+]);
+
+if(!b.every(x=>
+
+Number.isInteger(x[0])&&
+
+Number.isInteger(x[1])&&
+
+x[0]>=1&&x[0]<=6&&
+
+x[1]>=1&&x[1]<=6
+
+))continue;
+
+if(new Set(b.map(x=>x[0])).size!==6||
+
+new Set(b.map(x=>x[1])).size!==6)
+
+continue;
+
+unique.set(
+
+`${r.d}-${r.s}-${r.r}`,
+
+{...r,d:String(r.d),b}
+
+);
+
+}
+
+return [...unique.values()]
+
+.sort((a,b)=>
+
+a.d.localeCompare(b.d)||
+
+Number(a.s)-Number(b.s)||
+
+Number(a.r)-Number(b.r)
+
+);
+
+}
+
+function grade(v){
+
+return String(v??'').trim().toUpperCase();
+
+}
+
+function stats(){
+
+const map=new Map();
+
+function add(k,w){
+
+const x=map.get(k)||[0,0];
+
+x[0]++;
+
+x[1]+=w;
+
+map.set(k,x);
+
+}
+
+function estimate(k,p,w){
+
+const x=map.get(k)||[0,0];
+
+return (x[1]+p*w)/(x[0]+w);
+
+}
+
+function count(k){
+
+return (map.get(k)||[0,0])[0];
+
+}
+
+return {add,estimate,count};
+
+}
+
+function windBand(v){
+
+const n=number(v,0,30);
+
+if(n===null)return null;
+
+return n<3?'弱':n<6?'中':'強';
+
+}
+
+function exRanks(boats){
+
+const valid=boats.filter(
+
+b=>b[4]!==null
+
+);
+
+const sorted=valid.slice()
+
+.sort((a,b)=>a[4]-b[4]);
+
+const ranks=new Map();
+
+if(sorted.length!==6)
+
+return ranks;
+
+for(const b of sorted){
+
+ranks.set(
+
+b[0],
+
+1+sorted.filter(x=>x[4]<b[4]).length
+
+);
+
+}
+
+return ranks;
+
+}
+
+function train(s,r){
+
+const ranks=exRanks(r.b);
+
+const wind=windBand(r.w);
+
+for(const b of r.b){
+
+const n=b[0];
+
+const w=b[1]===1?1:0;
+
+s.add(`boat:${n}`,w);
+
+if(b[3]!=null)
+
+s.add(`grade:${n}:${grade(b[3])}`,w);
+
+if(b[2]!=null)
+
+s.add(`player:${n}:${b[2]}`,w);
+
+s.add(`venue:${r.s}:${n}`,w);
+
+if(wind!==null)
+
+s.add(`wind:${n}:${wind}`,w);
+
+if(ranks.has(n))
+
+s.add(`ex:${n}:${ranks.get(n)}`,w);
+
+if(b[5]!==null)
+
+s.add(`course:${n}:${b[5]}`,w);
+
+}
+
+}
+
+function predict19(s,r,mode){
+
+const ranks=exRanks(r.b);
+
+const wind=windBand(r.w);
+
+const boats=r.b.map(b=>{
+
+const n=b[0];
+
+const base=s.estimate(
+
+`boat:${n}`,1/6,20
+
+);
+
+const g=s.estimate(
+
+`grade:${n}:${grade(b[3])}`,
+
+base,30
+
+);
+
+const p=s.estimate(
+
+`player:${n}:${b[2]}`,
+
+g,40
+
+);
+
+let score=.8*g+.2*p;
+
+if(mode>=1){
+
+const v=s.estimate(
+
+`venue:${r.s}:${n}`,
+
+base,40
+
+);
+
+score*=Math.pow(
+
+v/Math.max(.001,base),.35
+
+);
+
+}
+
+if(mode>=2&&ranks.has(n)){
+
+const ex=s.estimate(
+
+`ex:${n}:${ranks.get(n)}`,
+
+base,40
+
+);
+
+score*=Math.pow(
+
+ex/Math.max(.001,base),.35
+
+);
+
+}
+
+if(mode>=3){
+
+if(wind!==null){
+
+const w=s.estimate(
+
+`wind:${n}:${wind}`,
+
+base,50
+
+);
+
+score*=Math.pow(
+
+w/Math.max(.001,base),.25
+
+);
+
+}
+
+if(b[5]!==null){
+
+const c=s.estimate(
+
+`course:${n}:${b[5]}`,
+
+base,40
+
+);
+
+score*=Math.pow(
+
+c/Math.max(.001,base),.35
+
+);
+
+}
+
+}
+
+return {
+
+n,
+
+p:Math.max(.001,score)
+
+};
+
+});
+
+const total=boats.reduce(
+
+(s,b)=>s+b.p,0
+
+);
+
+boats.forEach(b=>b.p/=total);
+
+const combinations=[];
+
+for(const a of boats)
+
+for(const b of boats)
+
+for(const c of boats){
+
+if(new Set([a.n,b.n,c.n]).size!==3)
+
+continue;
+
+const probability=
+
+a.p*b.p/(1-a.p)*
+
+c.p/(1-a.p-b.p);
+
+combinations.push({
+
+name:`${a.n}-${b.n}-${c.n}`,
+
+p:probability
+
+});
+
+}
+
+return {
+
+boats,
+
+combinations:combinations.sort(
+
+(a,b)=>b.p-a.p
+
+)
+
+};
+
+}
+
+async function fetchJSON(url){
+
+const res=await fetch(url,{
+
+cache:'no-store'
+
+});
+
+if(!res.ok)
+
+throw new Error('HTTP '+res.status);
+
+return res.json();
+
+}
+
+async function getRace(){
+
+const d=day();
+
+const stadium=
+
+venues19.indexOf(E('venue').value)+1;
+
+const race=parseInt(E('race').value);
+
+if(!stadium||!race)
+
+throw new Error('レースを選択してください');
+
+const base=
+
+'https://boatraceopenapi.github.io/';
+
+const file=d.slice(0,4)+'/'+d+'.json';
+
+const result=await Promise.allSettled([
+
+fetchJSON(base+'api/v1/'+file),
+
+fetchJSON(base+'previews/v2/'+file)
+
+]);
+
+if(result[0].status!=='fulfilled')
+
+throw new Error('出走表取得失敗');
+
+const item=result[0].value
+
+.programs?.stadiums?.[stadium]
+
+?.races?.[race];
+
+if(!item?.racers)
+
+throw new Error('出走表がありません');
+
+let preview=null;
+
+if(result[1].status==='fulfilled'){
+
+const list=result[1].value.previews;
+
+if(Array.isArray(list)){
+
+preview=list.find(x=>
+
+Number(x.race_stadium_number)===stadium&&
+
+Number(x.race_number)===race
+
+)||null;
+
+}
+
+}
+
+const previewBoats=
+
+Array.isArray(preview?.boats)?
+
+preview.boats:[];
+
+const racers=Object.values(item.racers)
+
+.map(x=>{
+
+const n=Number(x.entry_number);
+
+const ex=previewBoats.find(b=>
+
+Number(b.racer_boat_number)===n
+
+);
+
+return {
+
+n,
+
+name:x.name,
+
+id:x.number,
+
+grade:x.rank_number_source,
+
+national:number(x.national_win_rate,0,10),
+
+local:number(x.local_win_rate,0,10),
+
+st:number(x.average_start_timing,.001,1),
+
+motor2:number(x.motor_top_2_percent,0,100),
+
+motor3:number(x.motor_top_3_percent,0,100),
+
+ex:number(ex?.racer_exhibition_time,5,9),
+
+course:number(ex?.racer_course_number,1,6),
+
+exst:ex?.racer_start_timing??null
+
+};
+
+}).sort((a,b)=>a.n-b.n);
+
+if(racers.length!==6)
+
+throw new Error('6艇の出走表が必要です');
+
+return {
+
+d,
+
+s:stadium,
+
+r:race,
+
+racers,
+
+w:number(preview?.race_wind,0,30),
+
+wave:number(preview?.race_wave,0,100),
+
+b:racers.map(x=>[
+
+x.n,0,x.id,x.grade,x.ex,x.course
+
+])
+
+};
+
+}
+
+function athleteTable(r){
+
+return `
+
+<h3>選手・モーター成績</h3>
+
+<div style="overflow-x:auto">
+
+<table>
+
+<tr>
+
+<th>艇</th>
+
+<th>選手</th>
+
+<th>全国勝率</th>
+
+<th>当地勝率</th>
+
+<th>平均ST</th>
+
+<th>モーター2連率</th>
+
+<th>モーター3連率</th>
+
+</tr>
+
+${r.racers.map(x=>`
+
+<tr>
+
+<td>
+
+<span style="
+
+background:${colors19[x.n-1]};
+
+color:${x.n===1||x.n===5?'#111':'white'};
+
+padding:5px;
+
+border-radius:4px
+
+">${x.n}</span>
+
+</td>
+
+<td>${esc19(x.name)}<br>
+
+${esc19(x.grade)}</td>
+
+<td>${display(x.national)}</td>
+
+<td>${display(x.local)}</td>
+
+<td>${display(x.st)}</td>
+
+<td>${display(x.motor2,1)}</td>
+
+<td>${display(x.motor3,1)}</td>
+
+</tr>
+
+`).join('')}
+
+</table>
+
+</div>
+
+<h3>展示・気象</h3>
+
+<p>
+
+風速：${display(r.w,1)} m/s　
+
+波高：${display(r.wave,0)} cm
+
+</p>
+
+<table>
+
+<tr>
+
+<th>艇</th>
+
+<th>展示タイム</th>
+
+<th>展示ST</th>
+
+<th>進入</th>
+
+</tr>
+
+${r.racers.map(x=>`
+
+<tr>
+
+<td>${x.n}</td>
+
+<td>${display(x.ex)}</td>
+
+<td>${esc19(x.exst??'未取得')}</td>
+
+<td>${esc19(x.course??'未取得')}</td>
+
+</tr>
+
+`).join('')}
+
+</table>
+
+`;
+
+}
+
+E('v19load').onclick=async function(){
+
+this.disabled=true;
+
+const key=raceKey();
+
+E('v19output').innerHTML='';
+
+try{
+
+if(sport!=='boat')
+
+throw new Error('現在は競艇対応です');
+
+E('v19status').textContent=
+
+'レース情報取得中';
+
+await analyse();
+
+const r=await getRace();
+
+if(raceKey()!==key)
+
+throw new Error('レースが変更されました');
+
+const rows=records().filter(
+
+x=>x.d<r.d
+
+);
+
+const same=rows.filter(
+
+x=>Number(x.s)===r.s
+
+);
+
+const venueRate=[];
+
+for(let n=1;n<=6;n++){
+
+const win=same.filter(x=>
+
+x.b.some(b=>b[0]===n&&b[1]===1)
+
+).length;
+
+venueRate.push({
+
+n,
+
+win,
+
+rate:same.length?
+
+win/same.length:NaN
+
+});
+
+}
+
+E('v19output').innerHTML=`
+
+<h3>${esc19(E('venue').value)}
+
+${esc19(E('race').value)}</h3>
+
+${athleteTable(r)}
+
+<h3>開催場別の過去成績</h3>
+
+<p>対象：${same.length}R</p>
+
+<table>
+
+<tr>
+
+<th>艇</th>
+
+<th>1着回数</th>
+
+<th>1着率</th>
+
+</tr>
+
+${venueRate.map(x=>`
+
+<tr>
+
+<td>${x.n}</td>
+
+<td>${x.win}</td>
+
+<td>${pct(x.rate)}</td>
+
+</tr>
+
+`).join('')}
+
+</table>
+
+<p>
+
+展示・全国勝率・モーターなどは
+
+取得時点の参考情報です。
+
+未取得値は推測で補いません。
+
+</p>
+
+<p>
+
+全国勝率・当地勝率・モーター・
+
+波高の予測反映には、
+
+対応する過去データの保存と
+
+追加検証が必要です。
+
+</p>
+
+`;
+
+E('v19status').textContent=
+
+'データ取得完了';
+
+}catch(e){
+
+E('v19status').textContent=e.message;
+
+}finally{
+
+this.disabled=false;
+
+}
+
+};
+
+function jump(id){
+
+const x=E(id);
+
+if(x)x.scrollIntoView({
+
+behavior:'smooth',
+
+block:'center'
+
+});
+
+}
+
+E('v19image').onclick=()=>{
+
+E('v15images').click();
+
+};
+
+E('v19ocr').onclick=()=>{
+
+E('v17ocr').click();
+
+jump('v17ocr');
+
+};
+
+E('v19review').onclick=()=>{
+
+jump('v17review');
+
+};
+
+E('v19predict').onclick=()=>{
+
+E('v16run').click();
+
+jump('v16output');
+
+};
+
+E('v19history').onclick=()=>{
+
+E('v17test').click();
+
+jump('v17test');
+
+};
+
+function scoreStats(){
+
+return {
+
+n:0,
+
+loss:0,
+
+brier:0,
+
+actual:0,
+
+estimated:0
+
+};
+
+}
+
+E('v19test').onclick=async function(){
+
+this.disabled=true;
+
+E('v19testout').innerHTML='';
+
+try{
+
+const rows=records();
+
+if(rows.length<600)
+
+throw new Error('保存データ不足');
+
+const s=stats();
+
+const labels=[
+
+'従来モデル',
+
+'会場補正',
+
+'会場・展示補正',
+
+'会場・展示・風・進入補正'
+
+];
+
+const result=labels.map(
+
+()=>scoreStats()
+
+);
+
+let trained=0;
+
+let index=0;
+
+let tested=0;
+
+const split=Math.floor(
+
+rows.length*.8
+
+);
+
+let start='';
+
+while(index<rows.length){
+
+const d=rows[index].d;
+
+let next=index;
+
+while(next<rows.length&&
+
+rows[next].d===d)
+
+next++;
+
+const today=rows.slice(index,next);
+
+if(trained>=split){
+
+if(!start)start=d;
+
+for(const r of today){
+
+const actual=r.b.slice()
+
+.sort((a,b)=>a[1]-b[1])
+
+.slice(0,3)
+
+.map(b=>b[0]).join('-');
+
+for(let mode=0;mode<4;mode++){
+
+const out=predict19(s,r,mode);
+
+const a=result[mode];
+
+const correct=out.combinations.find(
+
+x=>x.name===actual
+
+);
+
+a.n++;
+
+a.loss-=Math.log(
+
+Math.max(correct?.p||0,1e-12)
+
+);
+
+const first=out.combinations.slice(0,5);
+
+const p=first.reduce(
+
+(n,x)=>n+x.p,0
+
+);
+
+const hit=first.some(
+
+x=>x.name===actual
+
+)?1:0;
+
+a.actual+=hit;
+
+a.estimated+=p;
+
+a.brier+=(p-hit)**2;
+
+}
+
+tested++;
+
+}
+
+}
+
+for(const r of today){
+
+train(s,r);
+
+trained++;
+
+}
+
+index=next;
+
+E('v19teststatus').textContent=
+
+`検証中：${index}/${rows.length}R`;
+
+await new Promise(
+
+resolve=>setTimeout(resolve,0)
+
+);
+
+}
+
+if(!tested)
+
+throw new Error('検証対象なし');
+
+E('v19testout').innerHTML=`
+
+<h3>追加要素の精度比較</h3>
+
+<p>
+
+対象：${tested}R<br>
+
+検証開始：${start}
+
+</p>
+
+<div style="overflow-x:auto">
+
+<table>
+
+<tr>
+
+<th>モデル</th>
+
+<th>推定確率</th>
+
+<th>実測一致率</th>
+
+<th>確率誤差</th>
+
+<th>Log loss</th>
+
+</tr>
+
+${result.map((x,i)=>`
+
+<tr>
+
+<td>${labels[i]}</td>
+
+<td>${pct(x.estimated/x.n)}</td>
+
+<td>${pct(x.actual/x.n)}</td>
+
+<td>${(x.brier/x.n).toFixed(4)}</td>
+
+<td>${(x.loss/x.n).toFixed(4)}</td>
+
+</tr>
+
+`).join('')}
+
+</table>
+
+</div>
+
+<p>
+
+推定確率・実測一致率は
+
+確率上位5組の比較です。
+
+確率誤差・Log lossは小さいほど良好です。
+
+</p>
+
+<p>
+
+保存データの後半約20%を
+
+日付順に検証しています。
+
+対象日より前のデータのみ学習します。
+
+</p>
+
+<p>
+
+追加モデルは実験用です。
+
+V16の予測モデルは自動変更しません。
+
+全国勝率・モーターなどの過去情報は
+
+現在の保存データに含まれないため、
+
+この比較には使用していません。
+
+</p>
+
+`;
+
+E('v19teststatus').textContent=
+
+`検証完了：${tested}R`;
+
+}catch(e){
+
+E('v19teststatus').textContent=
+
+'検証エラー：'+e.message;
+
+}finally{
+
+this.disabled=false;
+
+}
+
+};
+
+E('v19backup').onclick=function(){
+
+if(E('finalBackup')){
+
+E('finalBackup').click();
+
+return;
+
+}
+
+const raw=localStorage.getItem(
+
+'aiRaceHistoryV6'
+
+);
+
+if(!raw){
+
+alert('保存データがありません');
+
+return;
+
+}
+
+const url=URL.createObjectURL(
+
+new Blob([raw],{
+
+type:'application/json'
+
+})
+
+);
+
+const a=document.createElement('a');
+
+a.href=url;
+
+a.download='AI-RACE-backup.json';
+
+a.click();
+
+setTimeout(
+
+()=>URL.revokeObjectURL(url),3000
+
+);
+
+};
+
+function checkDecimal(){
+
+const raw=E('v15raw')?.value||'';
+
+const matches=[...raw.matchAll(
+
+/([1-6]-[1-6]-[1-6])\s+(\d+)(?=\s|$)/g
+
+)];
+
+if(!matches.length)return;
+
+const values=[...new Set(
+
+matches.map(m=>m[1]+'：'+m[2])
+
+)];
+
+E('v19decimal').textContent=
+
+'小数点欠落の可能性：'+
+
+values.join(' ／ ')+
+
+'。元画像と照合してください。';
+
+}
+
+const warn=document.createElement('p');
+
+warn.id='v19decimal';
+
+warn.style.color='#ff9999';
+
+panel.prepend(warn);
+
+const observer=new MutationObserver(
+
+checkDecimal
+
+);
+
+observer.observe(E('v17ocrstatus'),{
+
+childList:true,
+
+subtree:true,
+
+characterData:true
+
+});
+
+for(const id of ['date','venue','race']){
+
+E(id).addEventListener('change',()=>{
+
+E('v19output').innerHTML='';
+
+E('v19decimal').textContent='';
+
+E('v19status').textContent=
+
+'レース情報を再取得してください';
+
+});
+
+}
+
+const compact=document.createElement('details');
+
+compact.style.marginTop='12px';
+
+const summary=document.createElement('summary');
+
+summary.textContent='旧バージョン・詳細設定';
+
+compact.appendChild(summary);
+
+panel.after(compact);
+
+for(const id of [
+
+'histCard','v6','v7','v8'
+
+]){
+
+const x=E(id);
+
+if(x&&!x.contains(panel))
+
+compact.appendChild(x);
+
+}
+
+const heading=document.querySelector('h1 small');
+
+if(heading)
+
+heading.textContent='V19';
+
+document.title='AI RACE V19';
+
+})();
+
+</script>
